@@ -1,23 +1,20 @@
-package qbot
+package main
 
 import (
-	"fmt"
 	"io/ioutil"
 
 	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
 )
 
-type SlackConfig struct {
-	APIToken       string   `yaml:"apiToken"`
-	JoinChannels   []string `yaml:"joinChannels"`
-	GeneralChannel string   `yaml:"generalChannel"`
-	Debug          bool
-}
-
 type qBot struct {
 	// Global qBot configuration
-	Config SlackConfig
+	Config struct {
+		APIToken       string   `yaml:"apiToken"`
+		JoinChannels   []string `yaml:"joinChannels"`
+		GeneralChannel string   `yaml:"generalChannel"`
+		Debug          bool
+	}
 
 	//Establish connection
 	Slack *slack.Client
@@ -26,31 +23,34 @@ type qBot struct {
 	//Channels map[string]Channel
 }
 
-func loadConfig() {
-	var sc SlackConfig
-
+func (qb *qBot) LoadConfig() *qBot {
 	content, err := ioutil.ReadFile("config.yaml")
-
-	err = yaml.Unmarshal(content, &sc)
+	err = yaml.Unmarshal(content, &qb.Config)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Print(sc.APIToken)
+	return qb
 }
 
-func (qb *qBot) runBot() {
+func (qb *qBot) RunBot() {
 	qb.Slack = slack.New(qb.Config.APIToken)
 
 	rtm := qb.Slack.NewRTM()
 	qb.rtm = rtm
 
-	//qb.setupHandlers()
-
+	qb.SetupHandlers()
 	qb.rtm.ManageConnection()
 }
 
+func (qb *qBot) SetupHandlers() {
+	return
+}
+
 func main() {
-	loadConfig()
+	var qb qBot
+	qb.LoadConfig()
+	qb.RunBot()
+
 	//fmt.Print(SlackConfig.APIToken)
 
 }
