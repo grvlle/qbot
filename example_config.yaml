@@ -1,0 +1,4 @@
+apiToken: "xxxooasfppp" #Enter Bot Oauth token
+metadata:
+  joinChannels: ""
+  generalChannels: ""

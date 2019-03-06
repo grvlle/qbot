@@ -24,12 +24,11 @@ type qBot struct {
 	//Channels map[string]Channel
 
 	//Listeners
-	Listener chan *Listener
+	DataBasket chan channel
 }
 
 func (qb *qBot) LoadConfig() *qBot {
-
-	qb.Listener = make(chan *Listener, 500)
+	qb.DataBasket = make(chan channel, 500)
 
 	content, err := ioutil.ReadFile("config.yaml")
 	err = yaml.Unmarshal(content, &qb.Config)
@@ -50,10 +49,10 @@ func (qb *qBot) RunBot() {
 }
 
 func (qb *qBot) SetupHandlers() {
-	go qb.EventListener(qb.Listener)
+	go qb.EventListener()
 }
 
-func (qb *qBot) EventListener(listen *Listener) {
+func (qb *qBot) EventListener() {
 
 	for msg := range qb.rtm.IncomingEvents {
 		switch ev := msg.Data.(type) {
@@ -61,7 +60,7 @@ func (qb *qBot) EventListener(listen *Listener) {
 		case *slack.MessageEvent:
 			msg := ev.Text
 			fmt.Println(msg)
-			listen <- msg
+			qb.DataBasket <- msg
 		case *slack.ConnectedEvent:
 			fmt.Println("Infos:", ev.Info)
 			fmt.Println("Connection counter:", ev.ConnectionCount)
