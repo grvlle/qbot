@@ -3,16 +3,12 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"sync"
 
 	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
 )
 
-var (
-	bot       qBot
-	messageCh = make(chan Message, 500)
-)
+var bot qBot
 
 type qBot struct {
 	// Global qBot configuration
@@ -23,16 +19,14 @@ type qBot struct {
 		Debug          bool
 	}
 
-	//Establish connection
+	//Establish websocket
 	Slack *slack.Client
 	rtm   *slack.RTM
-	Users map[string]slack.User
-	//Channels map[string]Channel
-
-	//Listeners
-	WG sync.WaitGroup
 }
 
+/*LoadConfig method is ran by the RunBot method and
+will populate the Config struct in the qBot type
+with configuration variables*/
 func (qb *qBot) LoadConfig() *qBot {
 
 	content, err := ioutil.ReadFile("config.yaml")
@@ -40,6 +34,7 @@ func (qb *qBot) LoadConfig() *qBot {
 	if err != nil {
 		panic(err)
 	}
+
 	return qb
 }
 
@@ -53,19 +48,22 @@ type Message struct {
 }
 
 func (qb *qBot) SetupHandlers() {
-	go qb.EventListener()
-	go qb.EventReciever()
+
+	go qb.MessageReciever()
 }
 
-func (qb *qBot) EventListener() {
-	defer qb.WG.Done()
+/* EventListener listens on the websocket for
+incoming slack events, including messages that it
+passes to the messageCh channel monitored by
+MessageReciever() */
+func (qb *qBot) EventListener(messageCh chan<- Message) {
 
 	for events := range qb.rtm.IncomingEvents {
 		switch ev := events.Data.(type) {
 
 		case *slack.MessageEvent:
 			msg := new(Message)
-			msg.User, msg.Channel, msg.Message = ev.Username, ev.Channel, ev.Text
+			msg.User, msg.Channel, msg.Message = ev.User, ev.Channel, ev.Text
 			messageCh <- *msg
 
 		case *slack.ConnectedEvent:
@@ -78,7 +76,7 @@ func (qb *qBot) EventListener() {
 			fmt.Printf("Presence Change: %v\n", ev)
 
 		case *slack.LatencyReport:
-			fmt.Printf("Current latency: %v\n", ev.Value)
+			//fmt.Printf("Current latency: %v\n", ev.Value)
 
 		case *slack.RTMError:
 			fmt.Printf("Error: %s\n", ev.Error())
@@ -90,16 +88,50 @@ func (qb *qBot) EventListener() {
 	}
 }
 
-func (qb *qBot) EventReciever() {
+func (qb *qBot) MessageReciever() {
+	messageCh := make(chan Message, 500)
+	go qb.EventListener(messageCh)
+
 	for msgs := range messageCh {
-		fmt.Println(msgs.Message)
+		message := msgs.Message                    //Message recieved
+		schannel := msgs.Channel                   //Channel where message were sent
+		user, err := qb.rtm.GetUserInfo(msgs.User) //User that sent message
+		if err != nil {
+			fmt.Printf("%s\n", err)
+		}
+		question := []rune(message)
+		outmsg := qb.rtm.NewOutgoingMessage("nil", schannel)
+
+		switch {
+		case string(question[0:3]) == "!q ":
+			outmsg = qb.rtm.NewOutgoingMessage("List questions", schannel)
+		case string(question[0:4]) == "!qna":
+			outmsg = qb.rtm.NewOutgoingMessage("List answer and questions", schannel)
+		case string(question[0:3]) == "!a ":
+			outmsg = qb.rtm.NewOutgoingMessage("Answer Question", schannel)
+		}
+		//fmt.Printf("Channel: %s\n User: %s\n msg: %s\n", schannel, user.Profile.RealName, message)
+		fmt.Println(user)
+		qb.rtm.SendMessage(outmsg)
 	}
-	// content := map[string]string{
-	// 	"username": username,
-	// 	"channel":  channel,
-	// 	"message":  msg,
-	// }
 }
+
+// func AnswerQuestion() {
+// 	return "answer"
+// }
+
+// func ListQnA() {
+// 	return "qna"
+// }
+
+//AskQuestion asfas
+// func (qb *qBot) AskQuestion() {
+// 	for question, schannel := range qb.qCh {
+// 		fmt.Println(question, schannel)
+// 	}
+// 	outmsg := qb.rtm.NewOutgoingMessage(question, channel)
+// 	qb.rtm.SendMessage(outmsg)
+// }
 
 func (qb *qBot) RunBot() {
 	qb.LoadConfig()
