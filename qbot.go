@@ -48,14 +48,13 @@ type Message struct {
 }
 
 func (qb *qBot) SetupHandlers() {
-
-	go qb.MessageReciever()
+	go qb.CommandParser()
 }
 
 /* EventListener listens on the websocket for
 incoming slack events, including messages that it
 passes to the messageCh channel monitored by
-MessageReciever() */
+CommandParser() */
 func (qb *qBot) EventListener(messageCh chan<- Message) {
 
 	for events := range qb.rtm.IncomingEvents {
@@ -88,13 +87,23 @@ func (qb *qBot) EventListener(messageCh chan<- Message) {
 	}
 }
 
-func (qb *qBot) MessageReciever() {
+/*Question will be used to store questions
+asked by users. TODO: implement */
+type Question struct {
+	User      string
+	Question  string
+	Answered  bool
+	ID        int
+	TimeStamp string
+}
+
+func (qb *qBot) CommandParser() {
 	messageCh := make(chan Message, 500)
 	go qb.EventListener(messageCh)
 
 	for msgs := range messageCh {
 		message := msgs.Message                    //Message recieved
-		schannel := msgs.Channel                   //Channel where message were sent
+		schannel := msgs.Channel                   //Slack Channel where message were sent
 		user, err := qb.rtm.GetUserInfo(msgs.User) //User that sent message
 		if err != nil {
 			fmt.Printf("%s\n", err)
@@ -102,12 +111,12 @@ func (qb *qBot) MessageReciever() {
 		question := []rune(message)
 		outmsg := qb.rtm.NewOutgoingMessage("nil", schannel)
 
-		switch {
-		case string(question[0:3]) == "!q ":
+		switch { //Checks incoming message for requested bot command
+		case string(question[0:3]) == "!q " || string(question[0:3]) == "!Q ":
 			outmsg = qb.rtm.NewOutgoingMessage("List questions", schannel)
-		case string(question[0:4]) == "!qna":
+		case string(question[0:4]) == "!qna" || string(question[0:4]) == "!QnA":
 			outmsg = qb.rtm.NewOutgoingMessage("List answer and questions", schannel)
-		case string(question[0:3]) == "!a ":
+		case string(question[0:3]) == "!a " || string(question[0:3]) == "!A ":
 			outmsg = qb.rtm.NewOutgoingMessage("Answer Question", schannel)
 		}
 		//fmt.Printf("Channel: %s\n User: %s\n msg: %s\n", schannel, user.Profile.RealName, message)
@@ -124,7 +133,7 @@ func (qb *qBot) MessageReciever() {
 // 	return "qna"
 // }
 
-//AskQuestion asfas
+//AskQuestion
 // func (qb *qBot) AskQuestion() {
 // 	for question, schannel := range qb.qCh {
 // 		fmt.Println(question, schannel)
