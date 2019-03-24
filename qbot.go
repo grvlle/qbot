@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"time"
 
 	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
@@ -48,7 +49,7 @@ type Message struct {
 }
 
 func (qb *qBot) SetupHandlers() {
-	go qb.CommandParser()
+	go qb.AskQuestion()
 }
 
 /* EventListener listens on the websocket for
@@ -90,37 +91,50 @@ func (qb *qBot) EventListener(messageCh chan<- Message) {
 /*Question will be used to store questions
 asked by users. TODO: implement */
 type Question struct {
-	User      string
-	Question  string
-	Answered  bool
-	ID        int
-	TimeStamp string
+	User         string
+	Question     string
+	Answered     bool
+	ID           int
+	SlackChannel string
+	TimeStamp    string
 }
 
-func (qb *qBot) CommandParser() {
+/*AskedQuestions TODO*/
+type AskedQuestions struct {
+	Questions []string
+}
+
+func (qb *qBot) CommandParser(questionCh chan<- Question) {
 	messageCh := make(chan Message, 500)
 	go qb.EventListener(messageCh)
 
 	for msgs := range messageCh {
 		message := msgs.Message                    //Message recieved
-		schannel := msgs.Channel                   //Slack Channel where message were sent
+		sChannel := msgs.Channel                   //Slack Channel where message were sent
 		user, err := qb.rtm.GetUserInfo(msgs.User) //User that sent message
 		if err != nil {
 			fmt.Printf("%s\n", err)
 		}
 		question := []rune(message)
-		outmsg := qb.rtm.NewOutgoingMessage("nil", schannel)
+		outmsg := qb.rtm.NewOutgoingMessage("nil", sChannel)
 
 		switch { //Checks incoming message for requested bot command
 		case string(question[0:3]) == "!q " || string(question[0:3]) == "!Q ":
-			outmsg = qb.rtm.NewOutgoingMessage("List questions", schannel)
+			outmsg = qb.rtm.NewOutgoingMessage("Ask Question", sChannel)
+			outquestion := string(question[3:])
+			q := new(Question)
+			ts := time.Now()
+			q.User, q.TimeStamp, q.Question, q.Answered, q.ID, q.SlackChannel = user.Profile.RealName, ts.Format("20060102150405"), outquestion, false, 1, sChannel
+			questionCh <- *q
+
+		case string(question[0:3]) == "!lq" || string(question[0:3]) == "!LQ":
+			outmsg = qb.rtm.NewOutgoingMessage("List questions", sChannel)
 		case string(question[0:4]) == "!qna" || string(question[0:4]) == "!QnA":
-			outmsg = qb.rtm.NewOutgoingMessage("List answer and questions", schannel)
+			outmsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
 		case string(question[0:3]) == "!a " || string(question[0:3]) == "!A ":
-			outmsg = qb.rtm.NewOutgoingMessage("Answer Question", schannel)
+			outmsg = qb.rtm.NewOutgoingMessage("Answer Question", sChannel)
 		}
-		//fmt.Printf("Channel: %s\n User: %s\n msg: %s\n", schannel, user.Profile.RealName, message)
-		fmt.Println(user)
+		//fmt.Printf("Channel: %s\n User: %s\n msg: %s\n", sChannel, user.Profile.RealName, message)
 		qb.rtm.SendMessage(outmsg)
 	}
 }
@@ -133,14 +147,18 @@ func (qb *qBot) CommandParser() {
 // 	return "qna"
 // }
 
-//AskQuestion
-// func (qb *qBot) AskQuestion() {
-// 	for question, schannel := range qb.qCh {
-// 		fmt.Println(question, schannel)
-// 	}
-// 	outmsg := qb.rtm.NewOutgoingMessage(question, channel)
-// 	qb.rtm.SendMessage(outmsg)
-// }
+//AskQuestion TODO: Store questions asked in DB
+func (qb *qBot) AskQuestion() {
+	questionCh := make(chan Question, 500)
+	go qb.CommandParser(questionCh)
+
+	id := 0
+	for q := range questionCh {
+		id++
+		q.ID = id //assign ID to incoming question
+		fmt.Println(q)
+	}
+}
 
 func (qb *qBot) RunBot() {
 	qb.LoadConfig()
