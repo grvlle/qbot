@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"time"
 
+	db "./db"
 	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
 )
@@ -24,6 +25,7 @@ type qBot struct {
 	Slack *slack.Client
 	rtm   *slack.RTM
 
+	//IO flow
 	qListen   chan Question
 	msgListen chan Message
 }
@@ -72,6 +74,7 @@ func (qb *qBot) EventListener() {
 		case *slack.MessageEvent:
 			msg := new(Message)
 			msg.User, msg.Channel, msg.Message = ev.User, ev.Channel, ev.Text
+
 			qb.msgListen <- *msg
 
 		case *slack.ConnectedEvent:
@@ -131,7 +134,7 @@ func (qb *qBot) CommandParser() {
 			ts := time.Now()
 			q.User, q.TimeStamp, q.Question, q.Answered, q.ID, q.SlackChannel = user.Profile.RealName, ts.Format("20060102150405"), outQuestion, false, 1, sChannel
 			outMsg = qb.rtm.NewOutgoingMessage("Question stored!", sChannel)
-			//questionCh <- *q
+
 			qb.qListen <- *q
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
@@ -159,7 +162,7 @@ func (qb *qBot) AskQuestion() {
 	id := 0
 	for q := range qb.qListen {
 		id++
-		q.ID = id //assign ID to incoming question
+		q.ID = id //assign incremented ID to incoming question
 		fmt.Println(q)
 	}
 }
@@ -176,5 +179,6 @@ func (qb *qBot) RunBot() {
 }
 
 func main() {
-	bot.RunBot()
+	//bot.RunBot()
+	db.ConnectToDB()
 }
