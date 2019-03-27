@@ -3,14 +3,20 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"time"
+	"log"
 
-	db "./db"
+	models "./db"
 	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
 )
 
 var bot qBot
+
+func main() {
+	//
+	//db.ConnectToDB()
+	bot.RunBot()
+}
 
 type qBot struct {
 	// Global qBot configuration
@@ -26,7 +32,7 @@ type qBot struct {
 	rtm   *slack.RTM
 
 	//IO flow
-	qListen   chan Question
+	qListen   chan models.Question
 	msgListen chan Message
 }
 
@@ -41,7 +47,7 @@ func (qb *qBot) LoadConfig() *qBot {
 		panic(err)
 	}
 
-	qb.qListen = make(chan Question, 500)
+	qb.qListen = make(chan models.Question, 500)
 	qb.msgListen = make(chan Message, 500)
 
 	return qb
@@ -78,41 +84,25 @@ func (qb *qBot) EventListener() {
 			qb.msgListen <- *msg
 
 		case *slack.ConnectedEvent:
-			fmt.Println("Infos:", ev.Info)
-			fmt.Println("Connection counter:", ev.ConnectionCount)
+			log.Println("Infos:", ev.Info)
+			log.Println("Connection counter:", ev.ConnectionCount)
 			// Replace C2147483705 with your Channel ID
 			//qb.rtm.SendMessage(qb.rtm.NewOutgoingMessage("Hello world", "C2147483705"))
 
 		case *slack.PresenceChangeEvent:
-			fmt.Printf("Presence Change: %v\n", ev)
+			log.Printf("Presence Change: %v\n", ev)
 
 		case *slack.LatencyReport:
 			//fmt.Printf("Current latency: %v\n", ev.Value)
 
 		case *slack.RTMError:
-			fmt.Printf("Error: %s\n", ev.Error())
+			log.Printf("Error: %s\n", ev.Error())
 
 		case *slack.InvalidAuthEvent:
-			fmt.Printf("Invalid credentials")
+			log.Printf("Invalid credentials")
 			return
 		}
 	}
-}
-
-/*Question type will be used to store questions
-asked by users in the Database */
-type Question struct {
-	User         string
-	Question     string
-	Answered     bool
-	ID           int
-	SlackChannel string
-	TimeStamp    string
-}
-
-/*AskedQuestions TODO*/
-type AskedQuestions struct {
-	Questions []string
 }
 
 func (qb *qBot) CommandParser() {
@@ -130,9 +120,9 @@ func (qb *qBot) CommandParser() {
 		switch { //Checks incoming message for requested bot command
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
 			outQuestion := string(msgSplit[3:])
-			q := new(Question)
-			ts := time.Now()
-			q.User, q.TimeStamp, q.Question, q.Answered, q.ID, q.SlackChannel = user.Profile.RealName, ts.Format("20060102150405"), outQuestion, false, 1, sChannel
+			q := new(models.Question)
+
+			q.User, q.Question, q.Answered, q.SlackChannel = user.Profile.RealName, outQuestion, false, sChannel
 			outMsg = qb.rtm.NewOutgoingMessage("Question stored!", sChannel)
 
 			qb.qListen <- *q
@@ -149,21 +139,16 @@ func (qb *qBot) CommandParser() {
 	}
 }
 
-// func AnswerQuestion() {
-// 	return "answer"
-// }
-
-// func ListQnA() {
-// 	return "qna"
-// }
-
 //AskQuestion TODO: Store questions asked in DB
 func (qb *qBot) AskQuestion() {
-	id := 0
+	db := ConnectToDB()
 	for q := range qb.qListen {
-		id++
-		q.ID = id //assign incremented ID to incoming question
-		fmt.Println(q)
+		db.DropTableIfExists(&models.Question{})
+		db.CreateTable(&models.Question{})
+		//db.NewRecord(&q)
+		//fmt.Println(q)
+		db.Create(&q)
+		log.Printf("Question asked by %v has been stored in the DB", q.User)
 	}
 }
 
@@ -176,9 +161,4 @@ func (qb *qBot) RunBot() {
 
 	qb.SetupHandlers()
 	qb.rtm.ManageConnection()
-}
-
-func main() {
-	//bot.RunBot()
-	db.ConnectToDB()
 }

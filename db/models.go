@@ -1,8 +1,6 @@
 package db
 
 import (
-	"log"
-
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql" //Dialect
 )
@@ -22,33 +20,4 @@ type Question struct {
 type Answer struct {
 	gorm.Model
 	Answer string
-}
-
-func ConnectToDB() {
-	db, err := gorm.Open("mysql", "root:qbot@/qbot?charset=utf8&parseTime=True&loc=Local")
-	if err != nil {
-		log.Printf("Failed to connect to Database. Reason: %v\n", err)
-	}
-	log.Printf("Successfully connected to qBot Database.")
-	defer db.Close()
-
-	db.DropTableIfExists(&Question{}, &Answer{})
-	db.CreateTable(&Question{}, &Answer{})
-
-	q := Question{
-		User:     "Janne",
-		Question: "Hur mar du?",
-		Answered: false,
-	}
-	q2 := Question{
-		User:     "ne",
-		Question: "2Hur mar du?",
-		Answered: false,
-	}
-	a := Answer{
-		Answer: "JA!",
-	}
-	db.Create(&q)
-	db.Create(&q2)
-	db.Create(&a)
 }
