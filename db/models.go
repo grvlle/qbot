@@ -13,11 +13,16 @@ type Question struct {
 	Question     string
 	Answered     bool
 	Answers      []Answer `gorm:"many2many:question_answers"`
-	AnswerID     uint     `sql:"index"`
+	AnswerID     uint
 	SlackChannel string
 }
 
+/*Answer type will be used to store answers
+(to questions asked by users) in the Database */
 type Answer struct {
 	gorm.Model
-	Answer string
+	User         string
+	Answer       string
+	QuestionID   int
+	SlackChannel string
 }

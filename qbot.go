@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"strconv"
+	"strings"
 
 	"github.com/jinzhu/gorm"
 
@@ -13,7 +15,7 @@ import (
 )
 
 type qBot struct {
-	// Global qBot configuration
+	//Global qBot configuration
 	Config struct {
 		APIToken       string   `yaml:"apiToken"`
 		JoinChannels   []string `yaml:"joinChannels"`
@@ -21,12 +23,13 @@ type qBot struct {
 		Debug          bool
 	}
 
-	//Establish websocket
+	//Websocket connection
 	Slack *slack.Client
 	rtm   *slack.RTM
 
 	//IO flow
 	qListen   chan models.Question
+	aListen   chan models.Answer
 	msgListen chan Message
 
 	//Database connection
@@ -45,6 +48,7 @@ func (qb *qBot) LoadConfig() *qBot {
 	}
 
 	qb.qListen = make(chan models.Question, 500)
+	qb.aListen = make(chan models.Answer, 500)
 	qb.msgListen = make(chan Message, 500)
 
 	qb.DB = ConnectToDB()
@@ -63,8 +67,9 @@ type Message struct {
 
 func (qb *qBot) SetupHandlers() {
 	go qb.EventListener()
-	go qb.QuestionHandler()
 	go qb.CommandParser()
+	go qb.QuestionHandler()
+	go qb.AnswerHandler()
 }
 
 /* EventListener listens on the websocket for
@@ -83,10 +88,8 @@ func (qb *qBot) EventListener() {
 			qb.msgListen <- *msg
 
 		case *slack.ConnectedEvent:
-			log.Println("Infos:", ev.Info)
-			log.Println("Connection counter:", ev.ConnectionCount)
-			// Replace C2147483705 with your Channel ID
-			//qb.rtm.SendMessage(qb.rtm.NewOutgoingMessage("Hello world", "C2147483705"))
+			log.Printf("Infos: %s", ev.Info)
+			log.Printf("Connection counter: %v", ev.ConnectionCount)
 
 		case *slack.PresenceChangeEvent:
 			log.Printf("Presence Change: %v\n", ev)
@@ -104,7 +107,10 @@ func (qb *qBot) EventListener() {
 	}
 }
 
-func (qb *qBot) CommandParser() {
+/*CommandParser parses the Slack messages sent by
+users for qBot commands and forwards them accordingly
+to handlers */
+func (qb *qBot) CommandParser() error {
 
 	for msgs := range qb.msgListen {
 		message := msgs.Message                    //Message recieved
@@ -126,24 +132,63 @@ func (qb *qBot) CommandParser() {
 			qb.qListen <- *q
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
-			outMsg = qb.rtm.NewOutgoingMessage("List questions", sChannel)
+			outMsg = qb.rtm.NewOutgoingMessage("List Questions", sChannel)
 		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
 			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
-			outMsg = qb.rtm.NewOutgoingMessage("Answer Question", sChannel)
+			reply := "Answer provided"
+
+			parts := strings.Fields(string(msgSplit[3:])) //Splits incoming message into slice
+			questionID, err := strconv.Atoi(parts[0])     //Verifies that the first element after "!a " is an intiger (Question ID)
+			if err != nil {
+				log.Printf("%v failed to provide a Question ID to the question answered", user.RealName)
+				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
+			}
+			outAnswer := parts[1]
+			a := new(models.Answer)
+			a.User, a.Answer, a.QuestionID, a.SlackChannel = user.Profile.RealName, outAnswer, questionID, sChannel
+			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
+
+			qb.aListen <- *a
+
 		}
-		//fmt.Printf("Channel: %s\n User: %s\n msg: %s\n", sChannel, user.Profile.RealName, message)
+		qb.rtm.SendMessage(outMsg)
+	}
+	return nil
+}
+
+/*QuestionHandler stores questions asked in the qBot DB*/
+func (qb *qBot) QuestionHandler() {
+
+	for q := range qb.qListen {
+		qb.CreateNewDBRecord(&q)
+		if err := qb.DB.First(&q, q.ID).Error; err != nil {
+			log.Printf("Failed to add record %v to table %v.\n Reason: %v", q, &q, err)
+		}
+		log.Printf("Question asked by %v has been stored in the DB", q.User)
+		reply := fmt.Sprintf("Your question has been stored with ID: %v", q.ID)
+		outMsg := qb.rtm.NewOutgoingMessage(reply, q.SlackChannel)
 		qb.rtm.SendMessage(outMsg)
 	}
 }
 
-//QuestionHandler TODO: Store questions asked in DB
-func (qb *qBot) QuestionHandler() {
+func (qb *qBot) AnswerHandler() {
 
-	for q := range qb.qListen {
-		qb.DB.NewRecord(&q)
-		qb.DB.Create(&q)
-		log.Printf("Question asked by %v has been stored in the DB", q.User)
+	for a := range qb.aListen {
+		qb.CreateNewDBRecord(&a)
+		if err := qb.DB.First(&a, a.ID).Error; err != nil {
+			log.Printf("Failed to add record %v to table %v.\n Reason: %v", a, &a, err)
+		}
+		log.Printf("An answer has been provided to Question %v by %v", a.QuestionID, a.User)
+		reply := fmt.Sprintf("Your answer to question %v has been stored with ID: %v", a.QuestionID, a.ID)
+		outMsg := qb.rtm.NewOutgoingMessage(reply, a.SlackChannel)
+		qb.rtm.SendMessage(outMsg)
+
+		//Update the questions table with DB ID to the answer as well as answer status
+		if err := qb.DB.Table("questions").Where("id IN (?)", a.QuestionID).Updates(map[string]interface{}{"answer_id": a.ID, "answered": true}).Error; err != nil {
+			log.Printf("Failed to update the questions table with the answer provided\n Reason: %v", err)
+		}
+
 	}
 }
 

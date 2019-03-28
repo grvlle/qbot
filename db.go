@@ -20,7 +20,6 @@ func ConnectToDB() (db *gorm.DB) {
 }
 
 func (qb *qBot) CreateDBTables() {
-	// qb.DB.DropTableIfExists(&models.Question{})
 	if qb.DB.HasTable(&models.Question{}) != true {
 		qb.DB.CreateTable(&models.Question{})
 		log.Printf("Setting up Database Tables.")
@@ -30,4 +29,9 @@ func (qb *qBot) CreateDBTables() {
 		log.Printf("Setting up Database Tables.")
 	}
 	log.Printf("Database check complete. No actions needed.")
+}
+
+func (qb *qBot) CreateNewDBRecord(dbTable interface{}) {
+	qb.DB.NewRecord(dbTable)
+	qb.DB.Create(dbTable)
 }
