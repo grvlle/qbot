@@ -5,18 +5,12 @@ import (
 	"io/ioutil"
 	"log"
 
+	"github.com/jinzhu/gorm"
+
 	models "./db"
 	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
 )
-
-var bot qBot
-
-func main() {
-	//
-	//db.ConnectToDB()
-	bot.RunBot()
-}
 
 type qBot struct {
 	// Global qBot configuration
@@ -34,6 +28,9 @@ type qBot struct {
 	//IO flow
 	qListen   chan models.Question
 	msgListen chan Message
+
+	//Database connection
+	DB *gorm.DB
 }
 
 /*LoadConfig method is ran by the RunBot method and
@@ -50,6 +47,8 @@ func (qb *qBot) LoadConfig() *qBot {
 	qb.qListen = make(chan models.Question, 500)
 	qb.msgListen = make(chan Message, 500)
 
+	qb.DB = ConnectToDB()
+
 	return qb
 }
 
@@ -64,7 +63,7 @@ type Message struct {
 
 func (qb *qBot) SetupHandlers() {
 	go qb.EventListener()
-	go qb.AskQuestion()
+	go qb.QuestionHandler()
 	go qb.CommandParser()
 }
 
@@ -121,8 +120,7 @@ func (qb *qBot) CommandParser() {
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
 			outQuestion := string(msgSplit[3:])
 			q := new(models.Question)
-
-			q.User, q.Question, q.Answered, q.SlackChannel = user.Profile.RealName, outQuestion, false, sChannel
+			q.User, q.Question, q.SlackChannel = user.Profile.RealName, outQuestion, sChannel
 			outMsg = qb.rtm.NewOutgoingMessage("Question stored!", sChannel)
 
 			qb.qListen <- *q
@@ -139,15 +137,12 @@ func (qb *qBot) CommandParser() {
 	}
 }
 
-//AskQuestion TODO: Store questions asked in DB
-func (qb *qBot) AskQuestion() {
-	db := ConnectToDB()
+//QuestionHandler TODO: Store questions asked in DB
+func (qb *qBot) QuestionHandler() {
+
 	for q := range qb.qListen {
-		db.DropTableIfExists(&models.Question{})
-		db.CreateTable(&models.Question{})
-		//db.NewRecord(&q)
-		//fmt.Println(q)
-		db.Create(&q)
+		qb.DB.NewRecord(&q)
+		qb.DB.Create(&q)
 		log.Printf("Question asked by %v has been stored in the DB", q.User)
 	}
 }
@@ -155,6 +150,7 @@ func (qb *qBot) AskQuestion() {
 func (qb *qBot) RunBot() {
 	qb.LoadConfig()
 	qb.Slack = slack.New(qb.Config.APIToken)
+	qb.CreateDBTables() //Sets up the DB tables for new Databases
 
 	rtm := qb.Slack.NewRTM()
 	qb.rtm = rtm
