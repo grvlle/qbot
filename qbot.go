@@ -46,14 +46,18 @@ func (qb *qBot) LoadConfig() *qBot {
 	if err != nil {
 		panic(err)
 	}
-
 	qb.qListen = make(chan models.Question, 500)
 	qb.aListen = make(chan models.Answer, 500)
 	qb.msgListen = make(chan Message, 500)
 
-	qb.DB = ConnectToDB()
-
 	return qb
+}
+
+func (qb *qBot) SetupHandlers() {
+	go qb.EventListener()
+	go qb.CommandParser()
+	go qb.QuestionHandler()
+	go qb.AnswerHandler()
 }
 
 /*Message contains the details of a recieved
@@ -63,13 +67,6 @@ type Message struct {
 	User    string
 	Channel string
 	Message string
-}
-
-func (qb *qBot) SetupHandlers() {
-	go qb.EventListener()
-	go qb.CommandParser()
-	go qb.QuestionHandler()
-	go qb.AnswerHandler()
 }
 
 /* EventListener listens on the websocket for
@@ -88,7 +85,7 @@ func (qb *qBot) EventListener() {
 			qb.msgListen <- *msg
 
 		case *slack.ConnectedEvent:
-			log.Printf("Infos: %s", ev.Info)
+			log.Println("Infos: ", ev.Info)
 			log.Printf("Connection counter: %v", ev.ConnectionCount)
 
 		case *slack.PresenceChangeEvent:
@@ -120,7 +117,7 @@ func (qb *qBot) CommandParser() error {
 			fmt.Printf("%s\n", err)
 		}
 		msgSplit := []rune(message)
-		outMsg := qb.rtm.NewOutgoingMessage("nil", sChannel)
+		outMsg := qb.rtm.NewOutgoingMessage("", sChannel)
 
 		switch { //Checks incoming message for requested bot command
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
@@ -133,6 +130,7 @@ func (qb *qBot) CommandParser() error {
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
 			outMsg = qb.rtm.NewOutgoingMessage("List Questions", sChannel)
+			ListQuestions(qb.Slack, sChannel)
 		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
 			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
@@ -159,7 +157,6 @@ func (qb *qBot) CommandParser() error {
 
 /*QuestionHandler stores questions asked in the qBot DB*/
 func (qb *qBot) QuestionHandler() {
-
 	for q := range qb.qListen {
 		qb.CreateNewDBRecord(&q)
 		if err := qb.DB.First(&q, q.ID).Error; err != nil {
@@ -173,7 +170,6 @@ func (qb *qBot) QuestionHandler() {
 }
 
 func (qb *qBot) AnswerHandler() {
-
 	for a := range qb.aListen {
 		qb.CreateNewDBRecord(&a)
 		if err := qb.DB.First(&a, a.ID).Error; err != nil {
@@ -195,6 +191,7 @@ func (qb *qBot) AnswerHandler() {
 func (qb *qBot) RunBot() {
 	qb.LoadConfig()
 	qb.Slack = slack.New(qb.Config.APIToken)
+	qb.DB = ConnectToDB()
 	qb.CreateDBTables() //Sets up the DB tables for new Databases
 
 	rtm := qb.Slack.NewRTM()
