@@ -18,38 +18,61 @@ type Reply struct {
 //Reply with unanswered questions to PostFormattedReply
 func ListQuestions(client *slack.Client, sChannel string) (string, error) {
 
-	// Format Header Section
-	headerText := slack.NewTextBlockObject("mrkdwn", "You have a new request:\n*<fakeLink.toEmployeeProfile.com|Fred Enriquez - New device request>*", false, false)
+	// Shared Assets for example
+	divSection := slack.NewDividerBlock()
+	voteBtnText := slack.NewTextBlockObject("plain_text", "Vote", true, false)
+	voteBtnEle := slack.NewButtonBlockElement("", "click_me_123", voteBtnText)
+	profileOne := slack.NewImageBlockObject("https://api.slack.com/img/blocks/bkb_template_images/profile_1.png", "Michael Scott")
+	profileTwo := slack.NewImageBlockObject("https://api.slack.com/img/blocks/bkb_template_images/profile_2.png", "Dwight Schrute")
+	profileThree := slack.NewImageBlockObject("https://api.slack.com/img/blocks/bkb_template_images/profile_3.png", "Pam Beasely")
+	profileFour := slack.NewImageBlockObject("https://api.slack.com/img/blocks/bkb_template_images/profile_4.png", "Angela")
+
+	// Header Section
+	headerText := slack.NewTextBlockObject("mrkdwn", "*Where should we order lunch from?* Poll by <fakeLink.toUser.com|Mark>", false, false)
 	headerSection := slack.NewSectionBlock(headerText, nil, nil)
 
-	// Format Fields
-	typeField := slack.NewTextBlockObject("mrkdwn", "*Type:*\nComputer (laptop)", false, false)
-	whenField := slack.NewTextBlockObject("mrkdwn", "*When:*\nSubmitted Aut 10", false, false)
-	lastUpdateField := slack.NewTextBlockObject("mrkdwn", "*Last Update:*\nMar 10, 2015 (3 years, 5 months)", false, false)
-	reasonField := slack.NewTextBlockObject("mrkdwn", "*Reason:*\nAll vowel keys aren't working.", false, false)
-	specsField := slack.NewTextBlockObject("mrkdwn", "*Specs:*\n\"Cheetah Pro 15\" - Fast, really fast\"", false, false)
+	// Option One Info
+	optOneText := slack.NewTextBlockObject("mrkdwn", ":sushi: *Ace Wasabi Rock-n-Roll Sushi Bar*\nThe best landlocked sushi restaurant.", false, false)
+	optOneSection := slack.NewSectionBlock(optOneText, nil, voteBtnEle)
 
-	fieldSlice := make([]*slack.TextBlockObject, 0)
-	fieldSlice = append(fieldSlice, typeField)
-	fieldSlice = append(fieldSlice, whenField)
-	fieldSlice = append(fieldSlice, lastUpdateField)
-	fieldSlice = append(fieldSlice, reasonField)
-	fieldSlice = append(fieldSlice, specsField)
+	// Option One Votes
+	optOneVoteText := slack.NewTextBlockObject("plain_text", "3 votes", true, false)
+	optOneContext := slack.NewContextBlock("", profileOne, profileTwo, profileThree, optOneVoteText)
 
-	fieldsSection := slack.NewSectionBlock(nil, fieldSlice, nil)
+	// Option Two Info
+	optTwoText := slack.NewTextBlockObject("mrkdwn", ":hamburger: *Super Hungryman Hamburgers*\nOnly for the hungriest of the hungry.", false, false)
+	optTwoSection := slack.NewSectionBlock(optTwoText, nil, voteBtnEle)
 
-	// Include Approve and Deny Buttons
-	approveBtnTxt := slack.NewTextBlockObject("plain_text", "Approve", false, false)
-	approveBtn := slack.NewButtonBlockElement("", "click_me_123", approveBtnTxt)
+	// Option Two Votes
+	optTwoVoteText := slack.NewTextBlockObject("plain_text", "2 votes", true, false)
+	optTwoContext := slack.NewContextBlock("", profileFour, profileTwo, optTwoVoteText)
 
-	denyBtnTxt := slack.NewTextBlockObject("plain_text", "Deny", false, false)
-	denyBtn := slack.NewButtonBlockElement("", "click_me_123", denyBtnTxt)
+	// Option Three Info
+	optThreeText := slack.NewTextBlockObject("mrkdwn", ":ramen: *Kagawa-Ya Udon Noodle Shop*\nDo you like to shop for noodles? We have noodles.", false, false)
+	optThreeSection := slack.NewSectionBlock(optThreeText, nil, voteBtnEle)
 
-	actionBlock := slack.NewActionBlock("", approveBtn, denyBtn)
+	// Option Three Votes
+	optThreeVoteText := slack.NewTextBlockObject("plain_text", "No votes", true, false)
+	optThreeContext := slack.NewContextBlock("", optThreeVoteText)
+
+	// Suggestions Action
+	btnTxt := slack.NewTextBlockObject("plain_text", "Add a suggestion", false, false)
+	nextBtn := slack.NewButtonBlockElement("", "click_me_123", btnTxt)
+	actionBlock := slack.NewActionBlock("", nextBtn)
 
 	//Package formatted reply
 	var r = &Reply{
-		Blocks: []slack.Block{headerSection, fieldsSection, actionBlock},
+		Blocks: []slack.Block{
+			headerSection,
+			divSection,
+			optOneSection,
+			optOneContext,
+			optTwoSection,
+			optTwoContext,
+			optThreeSection,
+			optThreeContext,
+			divSection,
+			actionBlock},
 		AsUser: true,
 	}
 

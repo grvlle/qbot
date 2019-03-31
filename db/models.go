@@ -10,10 +10,9 @@ asked by users in the Database */
 type Question struct {
 	gorm.Model
 	User         string
+	UserID       int `gorm:"index"`
 	Question     string
-	Answered     bool
-	Answers      []Answer `gorm:"many2many:question_answers"`
-	AnswerID     uint
+	Answers      []Answer
 	SlackChannel string
 }
 
@@ -22,7 +21,16 @@ type Question struct {
 type Answer struct {
 	gorm.Model
 	User         string
-	Answer       string
-	QuestionID   int
+	UserID       int    `gorm:"index"`
+	Answer       string `gorm:"type:varchar(100);unique_index"`
+	QuestionID   int    `gorm:"index"`
 	SlackChannel string
+}
+
+type User struct {
+	gorm.Model
+	Name    string
+	Title   string
+	Avatar  string
+	SlackID string `gorm:"type:varchar(100);unique_index"`
 }

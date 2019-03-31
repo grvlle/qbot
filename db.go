@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 
-	models "./db"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql" //Dialect
 )
@@ -19,19 +18,30 @@ func ConnectToDB() (db *gorm.DB) {
 	return db
 }
 
-func (qb *qBot) CreateDBTables() {
-	if qb.DB.HasTable(&models.Question{}) != true {
-		qb.DB.CreateTable(&models.Question{})
+//TODO: Make sure this method takes multiple arguments
+func (qb *qBot) CreateDBTables(DBtable interface{}) error {
+	if qb.DB.HasTable(DBtable) != true {
+		if err := qb.DB.CreateTable(DBtable).Error; err != nil {
+			log.Fatalf("Unable to create Database tables.\nReason: %v", err)
+			qb.DB.Close()
+			return err
+		}
 		log.Printf("Setting up Database Tables.")
 	}
-	if qb.DB.HasTable(&models.Answer{}) != true {
-		qb.DB.CreateTable(&models.Answer{})
-		log.Printf("Setting up Database Tables.")
-	}
+	qb.DB.AutoMigrate()
 	log.Printf("Database check complete. No actions needed.")
+	return nil
 }
 
-func (qb *qBot) CreateNewDBRecord(dbTable interface{}) {
-	qb.DB.NewRecord(dbTable)
-	qb.DB.Create(dbTable)
+func (qb *qBot) CreateNewDBRecord(DBtable interface{}) error {
+	if qb.DB.NewRecord(DBtable) != true {
+		log.Printf("The value's primary key is not blank")
+	}
+	if err := qb.DB.Create(DBtable).Error; err != nil {
+		log.Fatalf("Unable to create new Database record")
+		qb.DB.Close()
+		return err
+	}
+	log.Printf("A new Database Record were successfully added.")
+	return nil
 }
