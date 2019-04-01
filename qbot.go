@@ -30,7 +30,6 @@ type qBot struct {
 	//IO flow
 	qCh   chan models.Question
 	aCh   chan models.Answer
-	uCh   chan models.User
 	msgCh chan Message
 
 	//Database connection
@@ -49,7 +48,6 @@ func (qb *qBot) LoadConfig() *qBot {
 	}
 	qb.qCh = make(chan models.Question, 500)
 	qb.aCh = make(chan models.Answer, 500)
-	qb.uCh = make(chan models.User)
 	qb.msgCh = make(chan Message, 500)
 
 	return qb
@@ -116,20 +114,18 @@ func (qb *qBot) CommandParser() {
 		if err != nil {
 			fmt.Printf("%s\n", err)
 		}
+		qb.ManageUsers(user)
+
 		msgSplit := []rune(message)
 		outMsg := qb.rtm.NewOutgoingMessage("", sChannel)
-
-		u := new(models.User)
-		u.Name, u.Title, u.Avatar, u.SlackID = user.Profile.RealNameNormalized, user.Profile.Title, user.Profile.Image32, user.ID
 
 		switch { //Checks incoming message for requested bot command
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
 			outQuestion := string(msgSplit[3:])
 			q := new(models.Question)
-			q.User, q.Question, q.SlackChannel = user.Profile.RealNameNormalized, outQuestion, sChannel
+			q.Question, q.SlackChannel = outQuestion, sChannel
 			outMsg = qb.rtm.NewOutgoingMessage("Question stored!", sChannel)
 
-			qb.uCh <- *u
 			qb.qCh <- *q
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
@@ -142,19 +138,35 @@ func (qb *qBot) CommandParser() {
 			parts := strings.Fields(string(msgSplit[3:])) //Splits incoming message into slice
 			questionID, err := strconv.Atoi(parts[0])     //Verifies that the first element after "!a " is an intiger (Question ID)
 			if err != nil {
-				log.Printf("%v failed to provide a Question ID to the question answered", user.RealName)
+				log.Printf("Question ID was not provided with the question answered")
 				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
 			}
-			outAnswer := parts[1]
+			outAnswer := parts[1] //TODO: If statement to prevent panic if empty
 			a := new(models.Answer)
-			a.User, a.Answer, a.QuestionID, a.SlackChannel = user.Profile.RealName, outAnswer, questionID, sChannel
+			a.Answer, a.QuestionID, a.SlackChannel = outAnswer, questionID, sChannel
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
-			qb.uCh <- *u
 			qb.aCh <- *a
 
 		}
 		qb.rtm.SendMessage(outMsg)
+	}
+}
+
+/*ManageUsers cross references the Users posting
+against the Users added to the DB. If a new User
+is detected, ManageUsers will update the Users
+table with a new record of the poster*/
+func (qb *qBot) ManageUsers(user *slack.User) {
+
+	u := new(models.User)
+	u.Name, u.Title, u.Avatar, u.SlackUser = user.Profile.RealNameNormalized, user.Profile.Title, user.Profile.Image32, user.ID
+
+	if qb.UserExistInDB(*u) != true {
+		qb.CreateNewDBRecord(&u)
+		if err := qb.DB.First(&u, u.ID).Error; err != nil {
+			log.Printf("Failed to add record %v to table %v.\nReason: %v", u, &u, err)
+		}
 	}
 }
 
@@ -163,17 +175,16 @@ func (qb *qBot) AddToDatabase() {
 
 	newQuestionRecord := models.Question{}
 	newAnswerRecord := models.Answer{}
-	newUserRecord := models.User{}
 
 	for {
 		select {
 		case newQuestionRecord = <-qb.qCh:
 			qb.CreateNewDBRecord(&newQuestionRecord)
 			if err := qb.DB.First(&newQuestionRecord, newQuestionRecord.ID).Error; err != nil {
-				log.Printf("Failed to add record %v to table %v.\n Reason: %v", newQuestionRecord, &newQuestionRecord, err)
+				log.Printf("Failed to add record %v to table %v.\nReason: %v", newQuestionRecord, &newQuestionRecord, err) //Also triggered on duplicate question. TODO: Handle this
 			}
 			if newQuestionRecord.ID != 0 {
-				log.Printf("Question asked by %v has been stored in the DB", newQuestionRecord.User)
+				log.Printf("Question asked by user has been stored in the DB")
 				reply := fmt.Sprintf("Your question has been stored with ID: %v", newQuestionRecord.ID)
 				outMsg := qb.rtm.NewOutgoingMessage(reply, newQuestionRecord.SlackChannel)
 				qb.rtm.SendMessage(outMsg)
@@ -181,26 +192,13 @@ func (qb *qBot) AddToDatabase() {
 		case newAnswerRecord = <-qb.aCh:
 			qb.CreateNewDBRecord(&newAnswerRecord)
 			if err := qb.DB.First(&newAnswerRecord, newAnswerRecord.ID).Error; err != nil {
-				log.Printf("Failed to add record %v to table %v.\n Reason: %v", newAnswerRecord, &newAnswerRecord, err)
+				log.Printf("Failed to add record %v to table %v.\nReason: %v", newAnswerRecord, &newAnswerRecord, err) //Also triggered on duplicate answer. TODO: Handle this
 			}
 			if newAnswerRecord.ID != 0 {
-				log.Printf("An answer has been provided to Question %v by %v", newAnswerRecord.QuestionID, newAnswerRecord.User)
+				log.Printf("An answer has been provided to Question %v", newAnswerRecord.QuestionID)
 				reply := fmt.Sprintf("Your answer to question %v has been stored with ID: %v", newAnswerRecord.QuestionID, newAnswerRecord.ID)
 				outMsg := qb.rtm.NewOutgoingMessage(reply, newAnswerRecord.SlackChannel)
 				qb.rtm.SendMessage(outMsg)
-			}
-		case newUserRecord = <-qb.uCh:
-			var count int64
-			if err := qb.DB.Where("slack_id = ?", newUserRecord.SlackID).First(&newUserRecord).Count(&count); err != nil { //Count DB entries matching the Slack User ID
-				if count == 0 { //Avoid duplicate User entries in the DB.
-					qb.CreateNewDBRecord(&newUserRecord)
-				}
-			}
-			if err := qb.DB.First(&newUserRecord, newUserRecord.ID).Error; err != nil {
-				log.Printf("Failed to add record %v to table %v.\n Reason: %v", newUserRecord, &newUserRecord, err)
-			}
-			if newQuestionRecord.ID != 0 {
-				log.Printf("Slack User record with %v's information has been stored in the DB", newUserRecord.Name)
 			}
 		}
 	}
@@ -210,11 +208,7 @@ func (qb *qBot) RunBot() {
 	qb.LoadConfig()
 	qb.Slack = slack.New(qb.Config.APIToken)
 	qb.DB = ConnectToDB()
-
-	//TODO: FIX THIS
-	qb.CreateDBTables(models.Question{})
-	qb.CreateDBTables(models.Answer{})
-	qb.CreateDBTables(models.User{})
+	qb.CreateDBTables(models.Question{}, models.Answer{}, models.User{})
 
 	rtm := qb.Slack.NewRTM()
 	qb.rtm = rtm

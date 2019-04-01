@@ -1,36 +1,42 @@
 package db
 
 import (
-	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/mysql" //Dialect
+	"time"
+
+	_ "github.com/jinzhu/gorm/dialects/mysql" //mysql dialect
 )
 
-/*Question type will be used to store questions
-asked by users in the Database */
+/*User table in the Database */
+type User struct {
+	ID        int `gorm:"primary_key"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Questions []Question `gorm:"many2many:user_questions;"`
+	Answers   []Answer   `gorm:"many2many:user_answers;"`
+	Name      string
+	Title     string
+	Avatar    string
+	SlackUser string `gorm:"type:varchar(10);unique"`
+}
+
+/*Question table in the Database */
 type Question struct {
-	gorm.Model
-	User         string
-	UserID       int `gorm:"index"`
-	Question     string
-	Answers      []Answer
+	ID           int `gorm:"primary_key"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	UserID       int      `gorm:"index"`
+	Question     string   `gorm:"type:varchar(100);unique"`
+	Answers      []Answer `gorm:"many2many:question_answers;"`
 	SlackChannel string
 }
 
-/*Answer type will be used to store answers
-(to questions asked by users) in the Database */
+/*Answer table in the Database */
 type Answer struct {
-	gorm.Model
-	User         string
+	ID           int `gorm:"primary_key"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 	UserID       int    `gorm:"index"`
-	Answer       string `gorm:"type:varchar(100);unique_index"`
+	Answer       string `gorm:"type:varchar(100);unique"`
 	QuestionID   int    `gorm:"index"`
 	SlackChannel string
-}
-
-type User struct {
-	gorm.Model
-	Name    string
-	Title   string
-	Avatar  string
-	SlackID string `gorm:"type:varchar(100);unique_index"`
 }
