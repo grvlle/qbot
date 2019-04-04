@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/nlopes/slack"
@@ -16,7 +17,10 @@ type Reply struct {
 
 //ListQuestions takes the Slack Client and returns a formatted
 //Reply with unanswered questions to PostFormattedReply
-func ListQuestions(client *slack.Client, sChannel string) (string, error) {
+func (qb *qBot) ListQuestions(client *slack.Client, sChannel string) (string, error) {
+
+	fmt.Println(qb.LastTenQuestions(&LastTenQuestions{}))
+	fmt.Println(qb.LastTenAnswers(&LastTenAnswers{}))
 
 	// Shared Assets for example
 	divSection := slack.NewDividerBlock()

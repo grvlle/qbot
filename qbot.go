@@ -129,7 +129,7 @@ func (qb *qBot) CommandParser() {
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
-			ListQuestions(qb.Slack, sChannel)
+			qb.ListQuestions(qb.Slack, sChannel)
 		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
 			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":

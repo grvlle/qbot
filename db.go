@@ -9,6 +9,17 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/mysql" //Dialect
 )
 
+type LastTenQuestions struct {
+	ID       []uint
+	Question []string
+}
+
+type LastTenAnswers struct {
+	ID         []uint
+	Answer     []string
+	QuestionID []int
+}
+
 //InitializeDB sets up the mySQL connection
 func InitializeDB() (db *gorm.DB) {
 	db, err := gorm.Open("mysql", "root:qbot@/qbot?charset=utf8&parseTime=True&loc=Local")
@@ -21,8 +32,12 @@ func InitializeDB() (db *gorm.DB) {
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
 
-	db.AutoMigrate(models.User{}, models.Question{}, models.Answer{})
+	//db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) //Temp
 
+	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
+		log.Fatalf("Unable to migrate database. \nReason: %v", err)
+	}
+	log.Printf("Migrating Database...")
 	return db
 }
 
@@ -47,4 +62,36 @@ func (qb *qBot) UserExistInDB(newUserRecord models.User) bool {
 		}
 	}
 	return true
+}
+
+func (qb *qBot) LastTenQuestions(ltq *LastTenQuestions) (LastTenQuestions, error) {
+	tenQuestions, _ := qb.DB.Model(&models.Question{}).Last(&[]models.Question{}).Limit(10).Rows()
+	for tenQuestions.Next() {
+		q := new(models.Question)
+		err := qb.DB.ScanRows(tenQuestions, q)
+		if err != nil {
+			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
+		}
+		log.Printf("Question %v: %s\n", q.ID, q.Question)
+
+		ltq.ID = append(ltq.ID, q.ID)
+		ltq.Question = append(ltq.Question, q.Question)
+	}
+	return *ltq, nil
+}
+
+func (qb *qBot) LastTenAnswers(lta *LastTenAnswers) (LastTenAnswers, error) {
+	tenAnswers, _ := qb.DB.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Last(&[]models.Answer{}).Limit(10).Rows()
+	for tenAnswers.Next() {
+		a := new(models.Answer)
+		err := qb.DB.ScanRows(tenAnswers, a)
+		if err != nil {
+			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
+		}
+		log.Printf("Answer %v: %s, %v\n", a.ID, a.Answer, a.QuestionID)
+		lta.ID = append(lta.ID, a.ID)
+		lta.Answer = append(lta.Answer, a.Answer)
+		lta.QuestionID = append(lta.QuestionID, a.QuestionID)
+	}
+	return *lta, nil
 }
