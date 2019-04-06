@@ -24,16 +24,13 @@ type LastTenAnswers struct {
 func InitializeDB() (db *gorm.DB) {
 	db, err := gorm.Open("mysql", "root:qbot@/qbot?charset=utf8&parseTime=True&loc=Local")
 	if err != nil {
-		log.Printf("Failed to connect to Database. Reason: %v\n", err)
+		log.Fatalf("Failed to connect to Database. Reason: %v\n", err)
 	}
 	log.Printf("Successfully connected to qBot Database.")
-
 	db.DB().SetConnMaxLifetime(time.Second * 100)
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
-
 	//db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) //Temp
-
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
 		log.Fatalf("Unable to migrate database. \nReason: %v", err)
 	}
@@ -53,6 +50,7 @@ func (qb *qBot) CreateNewDBRecord(record interface{}) error {
 	return nil
 }
 
+// UserExistInDB queries the DB for existing users prior to adding new ones.
 func (qb *qBot) UserExistInDB(newUserRecord models.User) bool {
 	var count int64
 	//Count DB entries matching the Slack User ID
@@ -64,34 +62,37 @@ func (qb *qBot) UserExistInDB(newUserRecord models.User) bool {
 	return true
 }
 
-func (qb *qBot) LastTenQuestions(ltq *LastTenQuestions) (LastTenQuestions, error) {
-	tenQuestions, _ := qb.DB.Model(&models.Question{}).Last(&[]models.Question{}).Limit(10).Rows()
+// LastTenQuestions func will query the database for the last ten questions stored
+// and return a populated struct of type LastTenQuestions. This function is called
+// in reply.go
+func (qb *qBot) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
+	tenQuestions, _ := qb.DB.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(10).Rows()
 	for tenQuestions.Next() {
 		q := new(models.Question)
 		err := qb.DB.ScanRows(tenQuestions, q)
 		if err != nil {
 			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
 		}
-		log.Printf("Question %v: %s\n", q.ID, q.Question)
-
 		ltq.ID = append(ltq.ID, q.ID)
 		ltq.Question = append(ltq.Question, q.Question)
 	}
-	return *ltq, nil
+	return ltq
 }
 
-func (qb *qBot) LastTenAnswers(lta *LastTenAnswers) (LastTenAnswers, error) {
-	tenAnswers, _ := qb.DB.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Last(&[]models.Answer{}).Limit(10).Rows()
+// LastTenAnswers func will query the database for the last ten questions stored
+// and return a populated struct of type LastTenAnswers. This function is called
+// in reply.go
+func (qb *qBot) LastTenAnswers(lta *LastTenAnswers) *LastTenAnswers {
+	tenAnswers, _ := qb.DB.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Order("created_at DESC").Last(&[]models.Answer{}).Limit(10).Rows()
 	for tenAnswers.Next() {
 		a := new(models.Answer)
 		err := qb.DB.ScanRows(tenAnswers, a)
 		if err != nil {
 			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
 		}
-		log.Printf("Answer %v: %s, %v\n", a.ID, a.Answer, a.QuestionID)
 		lta.ID = append(lta.ID, a.ID)
 		lta.Answer = append(lta.Answer, a.Answer)
 		lta.QuestionID = append(lta.QuestionID, a.QuestionID)
 	}
-	return *lta, nil
+	return lta
 }

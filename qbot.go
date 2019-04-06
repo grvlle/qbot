@@ -53,19 +53,18 @@ func (qb *qBot) SetupHandlers() {
 	go qb.CommandParser()
 }
 
-/*Message contains the details of a recieved
-Slack message. Constructed in the EventListener
-method and passed in the messageCh*/
+// Message contains the details of a recieved Slack message.
+// Constructed in the EventListener method and passed in the
+// messageCh
 type Message struct {
 	User    string
 	Channel string
 	Message string
 }
 
-/* EventListener listens on the websocket for
-incoming slack events, including messages that it
-passes to the messageCh channel monitored by
-CommandParser() */
+// EventListener listens on the websocket for incoming slack
+// events, including messages that it passes to the messageCh
+// channel monitored by CommandParser()
 func (qb *qBot) EventListener() {
 	for events := range qb.rtm.IncomingEvents {
 		switch ev := events.Data.(type) {
@@ -89,8 +88,7 @@ func (qb *qBot) EventListener() {
 	}
 }
 
-/*CommandParser parses the Slack messages
-for qBot commands */
+// CommandParser parses the Slack messages for qBot commands
 func (qb *qBot) CommandParser() {
 	for msgs := range qb.msgCh {
 		message := msgs.Message                        //Message recieved
@@ -103,8 +101,9 @@ func (qb *qBot) CommandParser() {
 		msgSplit := []rune(message)
 		outMsg := qb.rtm.NewOutgoingMessage("", sChannel)
 
-		switch { //Checks incoming message for requested bot command
+		switch { // Checks incoming message for requested bot command
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
+			var reply string
 			outQuestion := string(msgSplit[3:])
 			q := new(models.Question)
 			q.Question, q.SlackChannel = outQuestion, sChannel
@@ -121,11 +120,13 @@ func (qb *qBot) CommandParser() {
 				qb.UpdateUsers(user)
 			}
 
-			//Update the user_questions (m2m) and questions table with question_id and question
+			// Update the user_questions (m2m) and questions table with question_id and question
 			qb.DB.Model(user).Find(user)
-			qb.DB.Model(&user).Association("Questions").Append(q)
-
-			reply := fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", user.Name, q.ID)
+			if err := qb.DB.Model(&user).Association("Questions").Append(q).Error; err != nil {
+				reply = fmt.Sprintf("Someone has already asked that question. Run *!lq* to see the last questions asked")
+				log.Printf("%v's question has not been stored in the DB. Reason: %v", user.Name, err)
+			}
+			reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", user.Name, q.ID)
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
@@ -134,14 +135,14 @@ func (qb *qBot) CommandParser() {
 			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
 			reply := "Answer provided"
-			parts := strings.Fields(string(msgSplit[3:])) //Splits incoming message into slice
-			questionID, err := strconv.Atoi(parts[0])     //Verifies that the first element after "!a " is an intiger (Question ID)
+			parts := strings.Fields(string(msgSplit[3:])) // Splits incoming message into slice
+			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!a " is an intiger (Question ID)
 			if err != nil {
 				log.Printf("Question ID was not provided with the question answered")
 				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
 			}
 
-			outAnswer := parts[1] //TODO: If statement to prevent panic if empty
+			outAnswer := parts[1] // TODO: If statement to prevent panic if empty
 			a := new(models.Answer)
 			a.Answer, a.QuestionID, a.SlackChannel = outAnswer, questionID, sChannel
 
@@ -157,14 +158,20 @@ func (qb *qBot) CommandParser() {
 				qb.UpdateUsers(user)
 			}
 
-			//Update the user_answers (m2m) and answers table with the answer_id and answer
+			// Update the user_answers (m2m) and answers table with the answer_id and answer
 			qb.DB.Model(user).Find(user)
-			qb.DB.Model(&user).Association("Answers").Append(a)
+			if err := qb.DB.Model(&user).Association("Answers").Append(a).Error; err != nil {
+				reply = fmt.Sprintf("I had problems storing your provided answer in the DB")
+				log.Printf("%v's answer has not been stored in the DB. Reason: %v", user.Name, err)
+			}
 
-			//Update the questions_answer (m2m) table record with the answer_id
+			// Update the questions_answer (m2m) table record with the answer_id
 			q := models.Question{Answers: []*models.Answer{a}}
 			qb.DB.First(&q, a.QuestionID)
-			qb.DB.Model(&q).Association("Answers").Append(a)
+			if err := qb.DB.Model(&q).Association("Answers").Append(a).Error; err != nil {
+				reply = fmt.Sprintf("I had problems storing your provided answer in the DB")
+				log.Printf("%v's answer has not been stored in the DB. Reason: %v", user.Name, err)
+			}
 
 			reply = fmt.Sprintf("Thank you %s for providing an answer to question %v. Your answer has been assigned ID: %v", user.Name, q.ID, a.ID)
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
@@ -173,10 +180,10 @@ func (qb *qBot) CommandParser() {
 	}
 }
 
-/*UpdateUsers cross references the Users posting
-against the Users added to the DB. If a new User
-is detected, UpdateUsers will update the Users
-table with a new record of the poster*/
+// UpdateUsers cross references the Users posting
+// against the Users added to the DB. If a new User
+// is detected, UpdateUsers will update the Users
+// table with a new record of the poster
 func (qb *qBot) UpdateUsers(user *models.User) {
 	qb.CreateNewDBRecord(user)
 	if err := qb.DB.First(&user, user.ID).Error; err != nil {
