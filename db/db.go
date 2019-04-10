@@ -4,12 +4,14 @@ import (
 	"log"
 	"time"
 
-	models "../model"
+	models "github.com/grvlle/qbot/model"
+	"github.com/pkg/errors"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql" //Dialect
 )
 
+// Database: docker exec -it mysql1 mysql -uroot -p
 type Database struct {
 	*gorm.DB
 }
@@ -35,7 +37,7 @@ func InitializeDB() *Database {
 	db.DB().SetConnMaxLifetime(time.Second * 100)
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
-	db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) //Temp
+	db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
 		log.Fatalf("Unable to migrate database. \nReason: %v", err)
 	}
@@ -53,6 +55,18 @@ func (db *Database) CreateNewDBRecord(record interface{}) error {
 	}
 	log.Printf("A new Database Record were successfully added.")
 	return nil
+}
+
+func (db *Database) UpdateUserTableWithQuestion(user *models.User, q *models.Question) error {
+	return errors.Wrap(db.Model(&user).Find(user).Association("Questions").Append(q).Error, "Unable to update the User table with question asked")
+}
+
+func (db *Database) UpdateUserTableWithAnswer(user *models.User, a *models.Answer) error {
+	return errors.Wrap(db.Model(&user).Find(user).Association("Answers").Append(a).Error, "Unable to update the User table with answer provided")
+}
+
+func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.Answer) error {
+	return errors.Wrap(db.Model(&q).First(&q, a.QuestionID).Association("Answers").Append(a).Error, "Unable to update the Question table with answer provided")
 }
 
 // UpdateUsers func cross references the Users posting against the Users added

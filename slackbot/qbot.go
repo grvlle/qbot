@@ -13,8 +13,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// Bot contains Slack API configuration data
+// And provides Websocket and DB access
 type Bot struct {
-	//Global Bot configuration
+	// Global Bot configuration
 	Config struct {
 		APIToken       string   `yaml:"apiToken"`
 		JoinChannels   []string `yaml:"joinChannels"`
@@ -22,19 +24,20 @@ type Bot struct {
 		Debug          bool
 	}
 
-	//Websocket connection
+	// Websocket connection
 	Slack *slack.Client
 	rtm   *slack.RTM
 
-	//IO flow
+	// IO flow
 	msgCh chan Message
 
+	// Database Connection
 	DB *db.Database
 }
 
-/*LoadConfig method is ran by the RunBot method and
-will populate the Config struct in the Bot type
-with configuration variables*/
+// LoadConfig method is ran by the RunBot method and
+// will populate the Config struct in the Bot type
+// with configuration variables
 func (qb *Bot) LoadConfig() *Bot {
 	content, err := ioutil.ReadFile("config.yaml")
 	err = yaml.Unmarshal(content, &qb.Config)
@@ -46,6 +49,7 @@ func (qb *Bot) LoadConfig() *Bot {
 	return qb
 }
 
+// SetupHandlers sets up the Go Routines
 func (qb *Bot) SetupHandlers() {
 	go qb.EventListener()
 	go qb.CommandParser()
@@ -119,17 +123,15 @@ func (qb *Bot) CommandParser() {
 			}
 
 			// Update the user_questions (m2m) and questions table with question_id and question
-			qb.DB.Model(user).Find(user)
-			if err := qb.DB.Model(&user).Association("Questions").Append(q).Error; err != nil {
-				reply = fmt.Sprintf("Someone has already asked that question. Run *!lq* to see the last questions asked")
-				log.Printf("%v's question has not been stored in the DB. Reason: %v", user.Name, err)
+			if err := qb.DB.UpdateUserTableWithQuestion(user, q); err != nil {
+				reply = "Someone has already asked that question. Run *!lq* to see the last questions asked"
 			} else {
 				reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", user.Name, q.ID)
 			}
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
-			qb.ListQuestions(qb.Slack, sChannel)
+			//qb.ListQuestions(qb.Slack, sChannel)
 		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
 			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
@@ -140,45 +142,45 @@ func (qb *Bot) CommandParser() {
 				log.Printf("Question ID was not provided with the question answered")
 				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
 			}
+			outAnswer := strings.Join(parts[1:], " ")
+			if len(outAnswer) != 0 {
 
-			outAnswer := parts[1] // TODO: If statement to prevent panic if empty
-			a := new(models.Answer)
-			a.Answer, a.QuestionID, a.SlackChannel = outAnswer, questionID, sChannel
-
-			user := &models.User{
-				Answers:   []*models.Answer{a},
-				Name:      userInfo.Profile.RealNameNormalized,
-				Title:     userInfo.Profile.Title,
-				Avatar:    userInfo.Profile.Image32,
-				SlackUser: userInfo.ID,
+				a := new(models.Answer)
+				a.Answer, a.QuestionID, a.SlackChannel = outAnswer, questionID, sChannel
+				user := &models.User{
+					Answers:   []*models.Answer{a},
+					Name:      userInfo.Profile.RealNameNormalized,
+					Title:     userInfo.Profile.Title,
+					Avatar:    userInfo.Profile.Image32,
+					SlackUser: userInfo.ID,
+				}
+				if qb.DB.UserExistInDB(*user) != true {
+					qb.DB.UpdateUsers(user)
+				}
+				// Update the user_answers (m2m) and answers table with the answer_id and answer
+				if err := qb.DB.UpdateUserTableWithAnswer(user, a); err != nil {
+					log.Println(err)
+					reply = "I had problems storing your provided answer in the DB"
+				}
+				// Update the questions_answer (m2m) table record with the answer_id
+				q := models.Question{Answers: []*models.Answer{a}}
+				if err := qb.DB.UpdateQuestionTableWithAnswer(&q, a); err != nil {
+					log.Println(err)
+					reply = "I had problems storing your provided answer in the DB. Did you specify the Question ID correctly?"
+				} else {
+					reply = fmt.Sprintf("Thank you %s for providing an answer to question %v. Your answer has been assigned ID: %v", user.Name, q.ID, a.ID)
+				}
+			} else {
+				reply = "No answer was provided, please try again"
+				log.Println("No answer")
 			}
-
-			if qb.DB.UserExistInDB(*user) != true {
-				qb.DB.UpdateUsers(user)
-			}
-
-			// Update the user_answers (m2m) and answers table with the answer_id and answer
-			qb.DB.Model(user).Find(user)
-			if err := qb.DB.Model(&user).Association("Answers").Append(a).Error; err != nil {
-				reply = fmt.Sprintf("I had problems storing your provided answer in the DB")
-				log.Printf("%v's answer has not been stored in the DB. Reason: %v", user.Name, err)
-			}
-
-			// Update the questions_answer (m2m) table record with the answer_id
-			q := models.Question{Answers: []*models.Answer{a}}
-			qb.DB.First(&q, a.QuestionID)
-			if err := qb.DB.Model(&q).Association("Answers").Append(a).Error; err != nil {
-				reply = fmt.Sprintf("I had problems storing your provided answer in the DB")
-				log.Printf("%v's answer has not been stored in the DB. Reason: %v", user.Name, err)
-			}
-
-			reply = fmt.Sprintf("Thank you %s for providing an answer to question %v. Your answer has been assigned ID: %v", user.Name, q.ID, a.ID)
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 		}
 		qb.rtm.SendMessage(outMsg)
 	}
 }
 
+// RunBot will initiate the bot
 func (qb *Bot) RunBot() {
 	qb.LoadConfig()
 	qb.Slack = slack.New(qb.Config.APIToken)
