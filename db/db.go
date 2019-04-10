@@ -1,13 +1,18 @@
-package main
+package db
 
 import (
 	"log"
 	"time"
 
-	models "./db"
+	models "../model"
+
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql" //Dialect
 )
+
+type Database struct {
+	*gorm.DB
+}
 
 type LastTenQuestions struct {
 	ID       []uint
@@ -20,8 +25,8 @@ type LastTenAnswers struct {
 	QuestionID []int
 }
 
-//InitializeDB sets up the mySQL connection
-func InitializeDB() (db *gorm.DB) {
+// InitializeDB sets up the mySQL connection
+func InitializeDB() *Database {
 	db, err := gorm.Open("mysql", "root:qbot@/qbot?charset=utf8&parseTime=True&loc=Local")
 	if err != nil {
 		log.Fatalf("Failed to connect to Database. Reason: %v\n", err)
@@ -30,19 +35,19 @@ func InitializeDB() (db *gorm.DB) {
 	db.DB().SetConnMaxLifetime(time.Second * 100)
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
-	//db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) //Temp
+	db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) //Temp
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
 		log.Fatalf("Unable to migrate database. \nReason: %v", err)
 	}
 	log.Printf("Migrating Database...")
-	return db
+	return &Database{db}
 }
 
-func (qb *qBot) CreateNewDBRecord(record interface{}) error {
-	if qb.DB.NewRecord(record) != true {
+func (db *Database) CreateNewDBRecord(record interface{}) error {
+	if db.NewRecord(record) != true {
 		log.Printf("The value's primary key is not blank")
 	}
-	if err := qb.DB.Create(record).Error; err != nil {
+	if err := db.Create(record).Error; err != nil {
 		log.Printf("Unable to create new Database record")
 		return err
 	}
@@ -50,12 +55,22 @@ func (qb *qBot) CreateNewDBRecord(record interface{}) error {
 	return nil
 }
 
-// UserExistInDB queries the DB for existing users prior to adding new ones.
-func (qb *qBot) UserExistInDB(newUserRecord models.User) bool {
+// UpdateUsers func cross references the Users posting against the Users added
+// to the DB. If a new User is detected, UpdateUsers will update the Users
+// table with a new record of the poster
+func (db *Database) UpdateUsers(user *models.User) {
+	db.CreateNewDBRecord(user)
+	if err := db.First(&user, user.ID).Error; err != nil {
+		log.Printf("Failed to add record %v to table %v.\nReason: %v", user, &user, err)
+	}
+}
+
+// UserExistInDB func queries the DB for existing users prior to adding new ones.
+func (db *Database) UserExistInDB(newUserRecord models.User) bool {
 	var count int64
-	//Count DB entries matching the Slack User ID
-	if err := qb.DB.Where("slack_user = ?", newUserRecord.SlackUser).First(&newUserRecord).Count(&count); err != nil {
-		if count == 0 { //Avoid duplicate User entries in the DB.
+	// Count DB entries matching the Slack User ID
+	if err := db.Where("slack_user = ?", newUserRecord.SlackUser).First(&newUserRecord).Count(&count); err != nil {
+		if count == 0 { // Avoid duplicate User entries in the DB.
 			return false
 		}
 	}
@@ -65,11 +80,11 @@ func (qb *qBot) UserExistInDB(newUserRecord models.User) bool {
 // LastTenQuestions func will query the database for the last ten questions stored
 // and return a populated struct of type LastTenQuestions. This function is called
 // in reply.go
-func (qb *qBot) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
-	tenQuestions, _ := qb.DB.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(10).Rows()
+func (db *Database) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
+	tenQuestions, _ := db.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(10).Rows()
 	for tenQuestions.Next() {
 		q := new(models.Question)
-		err := qb.DB.ScanRows(tenQuestions, q)
+		err := db.ScanRows(tenQuestions, q)
 		if err != nil {
 			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
 		}
@@ -82,11 +97,11 @@ func (qb *qBot) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
 // LastTenAnswers func will query the database for the last ten questions stored
 // and return a populated struct of type LastTenAnswers. This function is called
 // in reply.go
-func (qb *qBot) LastTenAnswers(lta *LastTenAnswers) *LastTenAnswers {
-	tenAnswers, _ := qb.DB.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Order("created_at DESC").Last(&[]models.Answer{}).Limit(10).Rows()
+func (db *Database) LastTenAnswers(lta *LastTenAnswers) *LastTenAnswers {
+	tenAnswers, _ := db.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Order("created_at DESC").Last(&[]models.Answer{}).Limit(10).Rows()
 	for tenAnswers.Next() {
 		a := new(models.Answer)
-		err := qb.DB.ScanRows(tenAnswers, a)
+		err := db.ScanRows(tenAnswers, a)
 		if err != nil {
 			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
 		}

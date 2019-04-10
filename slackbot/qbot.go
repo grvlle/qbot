@@ -1,4 +1,4 @@
-package main
+package qbot
 
 import (
 	"fmt"
@@ -7,15 +7,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jinzhu/gorm"
-
-	models "./db"
+	db "github.com/grvlle/qbot/db"
+	models "github.com/grvlle/qbot/model"
 	"github.com/nlopes/slack"
 	"gopkg.in/yaml.v2"
 )
 
-type qBot struct {
-	//Global qBot configuration
+type Bot struct {
+	//Global Bot configuration
 	Config struct {
 		APIToken       string   `yaml:"apiToken"`
 		JoinChannels   []string `yaml:"joinChannels"`
@@ -30,25 +29,24 @@ type qBot struct {
 	//IO flow
 	msgCh chan Message
 
-	//Database connection
-	DB *gorm.DB
+	DB *db.Database
 }
 
 /*LoadConfig method is ran by the RunBot method and
-will populate the Config struct in the qBot type
+will populate the Config struct in the Bot type
 with configuration variables*/
-func (qb *qBot) LoadConfig() *qBot {
+func (qb *Bot) LoadConfig() *Bot {
 	content, err := ioutil.ReadFile("config.yaml")
 	err = yaml.Unmarshal(content, &qb.Config)
 	if err != nil {
 		panic(err)
 	}
 	qb.msgCh = make(chan Message, 500)
-	qb.DB = InitializeDB()
+	qb.DB = db.InitializeDB()
 	return qb
 }
 
-func (qb *qBot) SetupHandlers() {
+func (qb *Bot) SetupHandlers() {
 	go qb.EventListener()
 	go qb.CommandParser()
 }
@@ -65,7 +63,7 @@ type Message struct {
 // EventListener listens on the websocket for incoming slack
 // events, including messages that it passes to the messageCh
 // channel monitored by CommandParser()
-func (qb *qBot) EventListener() {
+func (qb *Bot) EventListener() {
 	for events := range qb.rtm.IncomingEvents {
 		switch ev := events.Data.(type) {
 		case *slack.MessageEvent:
@@ -88,12 +86,12 @@ func (qb *qBot) EventListener() {
 	}
 }
 
-// CommandParser parses the Slack messages for qBot commands
-func (qb *qBot) CommandParser() {
+// CommandParser parses the Slack messages for Bot commands
+func (qb *Bot) CommandParser() {
 	for msgs := range qb.msgCh {
-		message := msgs.Message                        //Message recieved
-		sChannel := msgs.Channel                       //Slack Channel where message were sent
-		userInfo, err := qb.rtm.GetUserInfo(msgs.User) //User that sent message
+		message := msgs.Message                        // Message recieved
+		sChannel := msgs.Channel                       // Slack Channel where message were sent
+		userInfo, err := qb.rtm.GetUserInfo(msgs.User) // User that sent message
 		if err != nil {
 			fmt.Printf("%s\n", err)
 		}
@@ -116,8 +114,8 @@ func (qb *qBot) CommandParser() {
 				SlackUser: userInfo.ID,
 			}
 
-			if qb.UserExistInDB(*user) != true {
-				qb.UpdateUsers(user)
+			if qb.DB.UserExistInDB(*user) != true {
+				qb.DB.UpdateUsers(user)
 			}
 
 			// Update the user_questions (m2m) and questions table with question_id and question
@@ -125,8 +123,9 @@ func (qb *qBot) CommandParser() {
 			if err := qb.DB.Model(&user).Association("Questions").Append(q).Error; err != nil {
 				reply = fmt.Sprintf("Someone has already asked that question. Run *!lq* to see the last questions asked")
 				log.Printf("%v's question has not been stored in the DB. Reason: %v", user.Name, err)
+			} else {
+				reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", user.Name, q.ID)
 			}
-			reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", user.Name, q.ID)
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
@@ -154,8 +153,8 @@ func (qb *qBot) CommandParser() {
 				SlackUser: userInfo.ID,
 			}
 
-			if qb.UserExistInDB(*user) != true {
-				qb.UpdateUsers(user)
+			if qb.DB.UserExistInDB(*user) != true {
+				qb.DB.UpdateUsers(user)
 			}
 
 			// Update the user_answers (m2m) and answers table with the answer_id and answer
@@ -180,18 +179,7 @@ func (qb *qBot) CommandParser() {
 	}
 }
 
-// UpdateUsers cross references the Users posting
-// against the Users added to the DB. If a new User
-// is detected, UpdateUsers will update the Users
-// table with a new record of the poster
-func (qb *qBot) UpdateUsers(user *models.User) {
-	qb.CreateNewDBRecord(user)
-	if err := qb.DB.First(&user, user.ID).Error; err != nil {
-		log.Printf("Failed to add record %v to table %v.\nReason: %v", user, &user, err)
-	}
-}
-
-func (qb *qBot) RunBot() {
+func (qb *Bot) RunBot() {
 	qb.LoadConfig()
 	qb.Slack = slack.New(qb.Config.APIToken)
 	rtm := qb.Slack.NewRTM()

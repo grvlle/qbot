@@ -1,7 +1,11 @@
 package main
 
-var bot qBot
+import (
+	qb "github.com/grvlle/qbot/slackbot"
+)
+
+//var bot qb
 
 func main() {
-	bot.RunBot()
+	qb.RunBot()
 }
