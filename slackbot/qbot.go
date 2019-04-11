@@ -3,13 +3,15 @@ package qbot
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
+
+	//"log"
 	"strconv"
 	"strings"
 
 	db "github.com/grvlle/qbot/db"
 	models "github.com/grvlle/qbot/model"
 	"github.com/nlopes/slack"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 )
 
@@ -46,6 +48,7 @@ func (qb *Bot) LoadConfig() *Bot {
 	}
 	qb.msgCh = make(chan Message, 500)
 	qb.DB = db.InitializeDB()
+
 	return qb
 }
 
@@ -75,16 +78,16 @@ func (qb *Bot) EventListener() {
 			msg.User, msg.Channel, msg.Message = ev.User, ev.Channel, ev.Text
 			qb.msgCh <- *msg
 		case *slack.ConnectedEvent:
-			log.Println("Infos: ", ev.Info)
-			log.Printf("Connection counter: %v", ev.ConnectionCount)
+			log.Info().Msgf("Info: %v", *ev.Info)
+			log.Info().Msgf("Connection counter: %v", ev.ConnectionCount)
 		case *slack.PresenceChangeEvent:
-			log.Printf("Presence Change: %v\n", ev)
+			log.Info().Msgf("Presence Change: %v\n", ev)
 		case *slack.LatencyReport:
 			//fmt.Printf("Current latency: %v\n", ev.Value)
 		case *slack.RTMError:
-			log.Printf("Error: %s\n", ev.Error())
+			log.Error().Msgf("RTM Error: %s\n", ev.Error())
 		case *slack.InvalidAuthEvent:
-			log.Printf("Invalid credentials")
+			log.Warn().Msg("Invalid credentials")
 			return
 		}
 	}
@@ -118,7 +121,7 @@ func (qb *Bot) CommandParser() {
 				SlackUser: userInfo.ID,
 			}
 
-			if qb.DB.UserExistInDB(*user) != true {
+			if !qb.DB.UserExistInDB(*user) {
 				qb.DB.UpdateUsers(user)
 			}
 
@@ -135,7 +138,7 @@ func (qb *Bot) CommandParser() {
 		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
 			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
-			reply := "Answer provided"
+			var reply string
 			parts := strings.Fields(string(msgSplit[3:])) // Splits incoming message into slice
 			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!a " is an intiger (Question ID)
 			if err != nil {
@@ -154,25 +157,29 @@ func (qb *Bot) CommandParser() {
 					Avatar:    userInfo.Profile.Image32,
 					SlackUser: userInfo.ID,
 				}
-				if qb.DB.UserExistInDB(*user) != true {
+
+				if !qb.DB.UserExistInDB(*user) {
 					qb.DB.UpdateUsers(user)
 				}
+
 				// Update the user_answers (m2m) and answers table with the answer_id and answer
 				if err := qb.DB.UpdateUserTableWithAnswer(user, a); err != nil {
-					log.Println(err)
+					log.Error().Err(err)
 					reply = "I had problems storing your provided answer in the DB"
 				}
+
 				// Update the questions_answer (m2m) table record with the answer_id
 				q := models.Question{Answers: []*models.Answer{a}}
 				if err := qb.DB.UpdateQuestionTableWithAnswer(&q, a); err != nil {
-					log.Println(err)
+					log.Error().Err(err)
 					reply = "I had problems storing your provided answer in the DB. Did you specify the Question ID correctly?"
 				} else {
 					reply = fmt.Sprintf("Thank you %s for providing an answer to question %v. Your answer has been assigned ID: %v", user.Name, q.ID, a.ID)
 				}
+
 			} else {
 				reply = "No answer was provided, please try again"
-				log.Println("No answer")
+				log.Warn().Msg("Slack user failed to provide and answer")
 			}
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 		}

@@ -1,8 +1,9 @@
 package db
 
 import (
-	"log"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	models "github.com/grvlle/qbot/model"
 	"github.com/pkg/errors"
@@ -31,26 +32,26 @@ type LastTenAnswers struct {
 func InitializeDB() *Database {
 	db, err := gorm.Open("mysql", "root:qbot@/qbot?charset=utf8&parseTime=True&loc=Local")
 	if err != nil {
-		log.Fatalf("Failed to connect to Database. Reason: %v\n", err)
+		log.Fatal().Msgf("Failed to connect to Database. Reason: %v\n", err)
 	}
-	log.Printf("Successfully connected to qBot Database.")
+	log.Info().Msg("Successfully connected to qBot Database.")
 	db.DB().SetConnMaxLifetime(time.Second * 100)
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
 	db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
-		log.Fatalf("Unable to migrate database. \nReason: %v", err)
+		log.Fatal().Msgf("Unable to migrate database. \nReason: %v", err)
 	}
-	log.Printf("Migrating Database...")
+	log.Info().Msg("Database migration successful.")
 	return &Database{db}
 }
 
 func (db *Database) CreateNewDBRecord(record interface{}) error {
 	if db.NewRecord(record) != true {
-		log.Printf("The value's primary key is not blank")
+		log.Warn().Msg("The value's primary key is not blank")
 	}
 	if err := db.Create(record).Error; err != nil {
-		log.Printf("Unable to create new Database record")
+		log.Warn().Msg("Unable to create new Database record")
 		return err
 	}
 	log.Printf("A new Database Record were successfully added.")
@@ -75,7 +76,7 @@ func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.
 func (db *Database) UpdateUsers(user *models.User) {
 	db.CreateNewDBRecord(user)
 	if err := db.First(&user, user.ID).Error; err != nil {
-		log.Printf("Failed to add record %v to table %v.\nReason: %v", user, &user, err)
+		log.Warn().Msgf("Failed to add record %v to table %v.\nReason: %v", user, &user, err)
 	}
 }
 
@@ -100,7 +101,7 @@ func (db *Database) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
 		q := new(models.Question)
 		err := db.ScanRows(tenQuestions, q)
 		if err != nil {
-			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
+			log.Error().Msgf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
 		}
 		ltq.ID = append(ltq.ID, q.ID)
 		ltq.Question = append(ltq.Question, q.Question)
@@ -117,7 +118,7 @@ func (db *Database) LastTenAnswers(lta *LastTenAnswers) *LastTenAnswers {
 		a := new(models.Answer)
 		err := db.ScanRows(tenAnswers, a)
 		if err != nil {
-			log.Printf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
+			log.Error().Msgf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
 		}
 		lta.ID = append(lta.ID, a.ID)
 		lta.Answer = append(lta.Answer, a.Answer)

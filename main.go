@@ -6,9 +6,10 @@ import (
 
 var bot qb.Bot
 
-func main() {
-	//qb.RunBot()
-	bot.RunBot()
+func init() {
+	InitializeLogger()
 }
 
-// docker exec -it mysql1 mysql -uroot -p
+func main() {
+	bot.RunBot()
+}

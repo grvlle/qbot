@@ -9,7 +9,7 @@ import (
 // Reply is used to construct formatted replies
 type Reply struct {
 	Body string
-	//Blocks      []slack.Block <--- !!!*THIS IS BROKEN IN THE SLACK LIB CURRENTLY*!!!
+	//Blocks      []slack.Block //<--- !!!*THIS IS BROKEN IN THE SLACK LIB CURRENTLY*!!!
 	Attachments []slack.Attachment
 	AsUser      bool
 }
