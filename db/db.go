@@ -35,9 +35,11 @@ func InitializeDB() *Database {
 		log.Fatal().Msgf("Failed to connect to Database. Reason: %v\n", err)
 	}
 	log.Info().Msg("Successfully connected to qBot Database.")
+
 	db.DB().SetConnMaxLifetime(time.Second * 100)
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
+
 	db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
 		log.Fatal().Msgf("Unable to migrate database. \nReason: %v", err)
@@ -47,14 +49,14 @@ func InitializeDB() *Database {
 }
 
 func (db *Database) CreateNewDBRecord(record interface{}) error {
-	if db.NewRecord(record) != true {
+	if !db.NewRecord(record) {
 		log.Warn().Msg("The value's primary key is not blank")
 	}
 	if err := db.Create(record).Error; err != nil {
 		log.Warn().Msg("Unable to create new Database record")
 		return err
 	}
-	log.Printf("A new Database Record were successfully added.")
+	log.Info().Msg("A new Database Record were successfully added.")
 	return nil
 }
 
