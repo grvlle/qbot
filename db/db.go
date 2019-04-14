@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -9,10 +10,14 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/jinzhu/gorm"
-	_ "github.com/jinzhu/gorm/dialects/mysql" //Dialect
+	_ "github.com/jinzhu/gorm/dialects/mysql" // MySQL
 )
 
-// Database: docker exec -it mysql1 mysql -uroot -p
+const (
+	queryLimit = 20 // Limit the amount of records retrieved
+)
+
+// Database : docker exec -it mysql1 mysql -uroot -p
 type Database struct {
 	*gorm.DB
 }
@@ -26,6 +31,13 @@ type LastTenAnswers struct {
 	ID         []uint
 	Answer     []string
 	QuestionID []int
+}
+
+type QuestionsAndAnswers struct {
+	Question string `json:"Question"`
+	Answers  []struct {
+		Answer string `json:"Answer"`
+	} `json:"Answers"`
 }
 
 // InitializeDB sets up the mySQL connection
@@ -94,11 +106,21 @@ func (db *Database) UserExistInDB(newUserRecord models.User) bool {
 	return true
 }
 
+func (db *Database) TenQuestionsAnswered() ([]models.Question, error) {
+	var qna []models.Question
+	return qna, errors.Wrap(db.Model(&[]models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Last(&qna).Limit(queryLimit).Error, "Problemas!")
+}
+
+func PopulateBuffer(data, buffer interface{}) error {
+	jsonEncQNA, _ := json.Marshal(data)
+	return json.Unmarshal(jsonEncQNA, &buffer)
+}
+
 // LastTenQuestions func will query the database for the last ten questions stored
 // and return a populated struct of type LastTenQuestions. This function is called
 // in reply.go
 func (db *Database) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
-	tenQuestions, _ := db.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(10).Rows()
+	tenQuestions, _ := db.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(queryLimit).Rows()
 	for tenQuestions.Next() {
 		q := new(models.Question)
 		err := db.ScanRows(tenQuestions, q)
@@ -115,7 +137,7 @@ func (db *Database) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
 // and return a populated struct of type LastTenAnswers. This function is called
 // in reply.go
 func (db *Database) LastTenAnswers(lta *LastTenAnswers) *LastTenAnswers {
-	tenAnswers, _ := db.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Order("created_at DESC").Last(&[]models.Answer{}).Limit(10).Rows()
+	tenAnswers, _ := db.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Order("created_at DESC").Last(&[]models.Answer{}).Limit(queryLimit).Rows()
 	for tenAnswers.Next() {
 		a := new(models.Answer)
 		err := db.ScanRows(tenAnswers, a)

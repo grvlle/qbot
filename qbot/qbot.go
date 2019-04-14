@@ -15,10 +15,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Bot contains Slack API configuration data
+// QBot contains Slack API configuration data
 // And provides Websocket and DB access
-type Bot struct {
-	// Global Bot configuration
+type QBot struct {
+	// Global QBot configuration
 	Config struct {
 		APIToken       string   `yaml:"apiToken"`
 		JoinChannels   []string `yaml:"joinChannels"`
@@ -38,9 +38,9 @@ type Bot struct {
 }
 
 // LoadConfig method is ran by the RunBot method and
-// will populate the Config struct in the Bot type
+// will populate the Config struct in the QBot type
 // with configuration variables
-func (qb *Bot) LoadConfig() *Bot {
+func (qb *QBot) LoadConfig() *QBot {
 	content, err := ioutil.ReadFile("config.yaml")
 	err = yaml.Unmarshal(content, &qb.Config)
 	if err != nil {
@@ -53,7 +53,7 @@ func (qb *Bot) LoadConfig() *Bot {
 }
 
 // SetupHandlers sets up the Go Routines
-func (qb *Bot) SetupHandlers() {
+func (qb *QBot) SetupHandlers() {
 	go qb.EventListener()
 	go qb.CommandParser()
 }
@@ -70,7 +70,7 @@ type Message struct {
 // EventListener listens on the websocket for incoming slack
 // events, including messages that it passes to the messageCh
 // channel monitored by CommandParser()
-func (qb *Bot) EventListener() {
+func (qb *QBot) EventListener() {
 	for events := range qb.rtm.IncomingEvents {
 		switch ev := events.Data.(type) {
 		case *slack.MessageEvent:
@@ -93,8 +93,8 @@ func (qb *Bot) EventListener() {
 	}
 }
 
-// CommandParser parses the Slack messages for Bot commands
-func (qb *Bot) CommandParser() {
+// CommandParser parses the Slack messages for QBot commands
+func (qb *QBot) CommandParser() {
 	for msgs := range qb.msgCh {
 		message := msgs.Message                        // Message recieved
 		sChannel := msgs.Channel                       // Slack Channel where message were sent
@@ -134,9 +134,24 @@ func (qb *Bot) CommandParser() {
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
-			//qb.ListQuestions(qb.Slack, sChannel)
+			qb.ListQuestions(qb.Slack, sChannel)
 		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
 			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
+			query, err := qb.DB.TenQuestionsAnswered()
+			if err != nil {
+				log.Error().Err(err)
+			}
+
+			var qnaStore []db.QuestionsAndAnswers
+
+			db.PopulateBuffer(query, &qnaStore)
+
+			if len(qnaStore) > 0 {
+				for n := range qnaStore {
+					fmt.Println(qnaStore[n])
+				}
+			}
+
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
 			var reply string
 			parts := strings.Fields(string(msgSplit[3:])) // Splits incoming message into slice
@@ -188,7 +203,7 @@ func (qb *Bot) CommandParser() {
 }
 
 // RunBot will initiate the bot
-func (qb *Bot) RunBot() {
+func (qb *QBot) RunBot() {
 	qb.LoadConfig()
 	qb.Slack = slack.New(qb.Config.APIToken)
 	rtm := qb.Slack.NewRTM()
