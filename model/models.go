@@ -21,8 +21,9 @@ type User struct {
 type Question struct {
 	gorm.Model
 	Question     string    `gorm:"type:varchar(300);unique"`
-	Answers      []*Answer `gorm:"many2many:question_answers;"`
+	Answers      []*Answer `gorm:"many2many:question_answers;auto_preload"`
 	SlackChannel string
+	UserName     string
 }
 
 /*Answer table in the Database */
@@ -31,4 +32,5 @@ type Answer struct {
 	Answer       string `gorm:"type:varchar(300);unique"`
 	QuestionID   int    `gorm:"index"`
 	SlackChannel string
+	UserName     string
 }

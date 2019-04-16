@@ -1,6 +1,7 @@
 package qbot
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 
@@ -14,6 +15,16 @@ import (
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
 )
+
+// RunBot will initiate the bot
+func (qb *QBot) RunBot() {
+	qb.LoadConfig()
+	qb.Slack = slack.New(qb.Config.APIToken)
+	rtm := qb.Slack.NewRTM()
+	qb.rtm = rtm
+	qb.SetupHandlers()
+	qb.rtm.ManageConnection()
+}
 
 // QBot contains Slack API configuration data
 // And provides Websocket and DB access
@@ -111,7 +122,7 @@ func (qb *QBot) CommandParser() {
 			var reply string
 			outQuestion := string(msgSplit[3:])
 			q := new(models.Question)
-			q.Question, q.SlackChannel = outQuestion, sChannel
+			q.Question, q.SlackChannel, q.UserName = outQuestion, sChannel, userInfo.Profile.RealName
 
 			user := &models.User{
 				Questions: []*models.Question{q},
@@ -120,7 +131,6 @@ func (qb *QBot) CommandParser() {
 				Avatar:    userInfo.Profile.Image32,
 				SlackUser: userInfo.ID,
 			}
-
 			if !qb.DB.UserExistInDB(*user) {
 				qb.DB.UpdateUsers(user)
 			}
@@ -134,23 +144,10 @@ func (qb *QBot) CommandParser() {
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
-			qb.ListQuestions(qb.Slack, sChannel)
+			//qb.ListQuestions(qb.Slack, sChannel)
+			qb.lqHandler()
 		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
-			outMsg = qb.rtm.NewOutgoingMessage("List answer and questions", sChannel)
-			query, err := qb.DB.TenQuestionsAnswered()
-			if err != nil {
-				log.Error().Err(err)
-			}
-
-			var qnaStore []db.QuestionsAndAnswers
-
-			db.PopulateBuffer(query, &qnaStore)
-
-			if len(qnaStore) > 0 {
-				for n := range qnaStore {
-					fmt.Println(qnaStore[n])
-				}
-			}
+			qb.qnaHandler(sChannel)
 
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
 			var reply string
@@ -164,7 +161,7 @@ func (qb *QBot) CommandParser() {
 			if len(outAnswer) != 0 {
 
 				a := new(models.Answer)
-				a.Answer, a.QuestionID, a.SlackChannel = outAnswer, questionID, sChannel
+				a.Answer, a.QuestionID, a.SlackChannel, a.UserName = outAnswer, questionID, sChannel, userInfo.Profile.RealName
 				user := &models.User{
 					Answers:   []*models.Answer{a},
 					Name:      userInfo.Profile.RealNameNormalized,
@@ -202,12 +199,31 @@ func (qb *QBot) CommandParser() {
 	}
 }
 
-// RunBot will initiate the bot
-func (qb *QBot) RunBot() {
-	qb.LoadConfig()
-	qb.Slack = slack.New(qb.Config.APIToken)
-	rtm := qb.Slack.NewRTM()
-	qb.rtm = rtm
-	qb.SetupHandlers()
-	qb.rtm.ManageConnection()
+func (qb *QBot) lqHandler() {
+	// TODO: List unanswered questions
+}
+
+// TODO: Fix Formating of reply and exclude unanswered questions
+func (qb *QBot) qnaHandler(sChannel string) {
+	msg := new(Reply)
+	query, err := qb.DB.QueryAnsweredQuestions()
+	if err != nil {
+		log.Error().Err(err)
+	}
+	var qnaStore []QuestionsAndAnswers
+	PopulateBuffer(query, &qnaStore)
+	if len(qnaStore) > 0 {
+		for n := range qnaStore {
+			reply := fmt.Sprintf("ID: %v, %v asked: %v\nAnswers: %v\n\n", qnaStore[n].QuestionID, qnaStore[n].AskedBy, qnaStore[n].Question, qnaStore[n].Answers)
+			msg.Body, msg.AsUser = reply, true
+			PostFormattedReply(qb.Slack, sChannel, msg)
+		}
+	}
+}
+
+// PopulateBuffer takes query data (db object) and a &struct (buffer) and populates
+// it using json tags.
+func PopulateBuffer(data, buffer interface{}) error {
+	jsonEncQNA, _ := json.Marshal(data)
+	return json.Unmarshal(jsonEncQNA, &buffer)
 }

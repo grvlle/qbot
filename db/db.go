@@ -1,7 +1,6 @@
 package db
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -14,30 +13,12 @@ import (
 )
 
 const (
-	queryLimit = 20 // Limit the amount of records retrieved
+	queryLimit = 20 // Limit the amount of records retrieved across all DB query functions
 )
 
 // Database : docker exec -it mysql1 mysql -uroot -p
 type Database struct {
 	*gorm.DB
-}
-
-type LastTenQuestions struct {
-	ID       []uint
-	Question []string
-}
-
-type LastTenAnswers struct {
-	ID         []uint
-	Answer     []string
-	QuestionID []int
-}
-
-type QuestionsAndAnswers struct {
-	Question string `json:"Question"`
-	Answers  []struct {
-		Answer string `json:"Answer"`
-	} `json:"Answers"`
 }
 
 // InitializeDB sets up the mySQL connection
@@ -53,6 +34,7 @@ func InitializeDB() *Database {
 	db.DB().SetMaxOpenConns(200)
 
 	db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
+	db.DropTable("user_questions", "question_answers", "user_answers")      // Temp
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
 		log.Fatal().Msgf("Unable to migrate database. \nReason: %v", err)
 	}
@@ -60,6 +42,9 @@ func InitializeDB() *Database {
 	return &Database{db}
 }
 
+/* CREATE FUNCTIONS */
+
+// CreateNewDBRecord checks if record exists. If not, proceeds to create a new one
 func (db *Database) CreateNewDBRecord(record interface{}) error {
 	if !db.NewRecord(record) {
 		log.Warn().Msg("The value's primary key is not blank")
@@ -72,27 +57,7 @@ func (db *Database) CreateNewDBRecord(record interface{}) error {
 	return nil
 }
 
-func (db *Database) UpdateUserTableWithQuestion(user *models.User, q *models.Question) error {
-	return errors.Wrap(db.Model(&user).Find(user).Association("Questions").Append(q).Error, "Unable to update the User table with question asked")
-}
-
-func (db *Database) UpdateUserTableWithAnswer(user *models.User, a *models.Answer) error {
-	return errors.Wrap(db.Model(&user).Find(user).Association("Answers").Append(a).Error, "Unable to update the User table with answer provided")
-}
-
-func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.Answer) error {
-	return errors.Wrap(db.Model(&q).First(&q, a.QuestionID).Association("Answers").Append(a).Error, "Unable to update the Question table with answer provided")
-}
-
-// UpdateUsers func cross references the Users posting against the Users added
-// to the DB. If a new User is detected, UpdateUsers will update the Users
-// table with a new record of the poster
-func (db *Database) UpdateUsers(user *models.User) {
-	db.CreateNewDBRecord(user)
-	if err := db.First(&user, user.ID).Error; err != nil {
-		log.Warn().Msgf("Failed to add record %v to table %v.\nReason: %v", user, &user, err)
-	}
-}
+/* READ FUNCTIONS */
 
 // UserExistInDB func queries the DB for existing users prior to adding new ones.
 func (db *Database) UserExistInDB(newUserRecord models.User) bool {
@@ -106,47 +71,46 @@ func (db *Database) UserExistInDB(newUserRecord models.User) bool {
 	return true
 }
 
-func (db *Database) TenQuestionsAnswered() ([]models.Question, error) {
-	var qna []models.Question
-	return qna, errors.Wrap(db.Model(&[]models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Last(&qna).Limit(queryLimit).Error, "Problemas!")
-}
-
-func PopulateBuffer(data, buffer interface{}) error {
-	jsonEncQNA, _ := json.Marshal(data)
-	return json.Unmarshal(jsonEncQNA, &buffer)
-}
-
-// LastTenQuestions func will query the database for the last ten questions stored
+// QueryQuestions func will query the database for the last ten questions stored
 // and return a populated struct of type LastTenQuestions. This function is called
 // in reply.go
-func (db *Database) LastTenQuestions(ltq *LastTenQuestions) *LastTenQuestions {
-	tenQuestions, _ := db.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(queryLimit).Rows()
-	for tenQuestions.Next() {
-		q := new(models.Question)
-		err := db.ScanRows(tenQuestions, q)
-		if err != nil {
-			log.Error().Msgf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
-		}
-		ltq.ID = append(ltq.ID, q.ID)
-		ltq.Question = append(ltq.Question, q.Question)
-	}
-	return ltq
+func (db *Database) QueryQuestions() ([]models.Question, error) {
+	var ltq []models.Question
+	return ltq, errors.Wrap(db.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(queryLimit).Error, "Unable to query Questions table for last questions")
 }
 
-// LastTenAnswers func will query the database for the last ten questions stored
-// and return a populated struct of type LastTenAnswers. This function is called
-// in reply.go
-func (db *Database) LastTenAnswers(lta *LastTenAnswers) *LastTenAnswers {
-	tenAnswers, _ := db.Model(&[]*models.Question{}).Related(&models.Answer{}, "Answers").Order("created_at DESC").Last(&[]models.Answer{}).Limit(queryLimit).Rows()
-	for tenAnswers.Next() {
-		a := new(models.Answer)
-		err := db.ScanRows(tenAnswers, a)
-		if err != nil {
-			log.Error().Msgf("Unable to parse SQL query into a crunchable dataformat. \nReason: %v", err)
-		}
-		lta.ID = append(lta.ID, a.ID)
-		lta.Answer = append(lta.Answer, a.Answer)
-		lta.QuestionID = append(lta.QuestionID, a.QuestionID)
+// QueryAnsweredQuestions queries the most recent Questions table and its m2m Answer relationship
+// for questions and answers. It returns a db object containing the information. This is parsed
+// and buffered using the PopulateBuffer func.
+func (db *Database) QueryAnsweredQuestions() ([]models.Question, error) {
+	var qna []models.Question
+	return qna, errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Find(&qna).Limit(queryLimit).Error, "Problemas!")
+}
+
+/* UPDATE FUNCTIONS */
+
+// UpdateUsers func cross references the Users posting against the Users added
+// to the DB. If a new User is detected, UpdateUsers will update the Users
+// table with a new record of the poster
+func (db *Database) UpdateUsers(user *models.User) uint {
+	db.CreateNewDBRecord(user)
+	if err := db.First(&user, user.ID).Error; err != nil {
+		log.Warn().Msgf("Failed to add record %v to table %v.\nReason: %v", user, &user, err)
 	}
-	return lta
+	return user.ID
+}
+
+// UpdateUserTableWithQuestion updates the User m2m relationship with questions asked
+func (db *Database) UpdateUserTableWithQuestion(user *models.User, q *models.Question) error {
+	return errors.Wrap(db.Model(&user).Find(user).Association("Questions").Append(q).Error, "Unable to update the User table with question asked")
+}
+
+// UpdateUserTableWithAnswer updates the User m2m relationship with answers provided
+func (db *Database) UpdateUserTableWithAnswer(user *models.User, a *models.Answer) error {
+	return errors.Wrap(db.Model(&user).Find(user).Association("Answers").Append(a).Error, "Unable to update the User table with answer provided")
+}
+
+// UpdateQuestionTableWithAnswer updates the Question tables m2m relationship with answers provided
+func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.Answer) error {
+	return errors.Wrap(db.Model(&q).First(&q, a.QuestionID).Association("Answers").Append(a).Error, "Unable to update the Question table with answer provided")
 }
