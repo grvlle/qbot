@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	//"log"
 	"strconv"
 	"strings"
 
@@ -85,9 +84,9 @@ func (qb *QBot) EventListener() {
 	for events := range qb.rtm.IncomingEvents {
 		switch ev := events.Data.(type) {
 		case *slack.MessageEvent:
-			msg := new(Message)
-			msg.User, msg.Channel, msg.Message = ev.User, ev.Channel, ev.Text
-			qb.msgCh <- *msg
+			r := new(Message)
+			r.User, r.Channel, r.Message = ev.User, ev.Channel, ev.Text
+			qb.msgCh <- *r
 		case *slack.ConnectedEvent:
 			log.Info().Msgf("Info: %v", *ev.Info)
 			log.Info().Msgf("Connection counter: %v", ev.ConnectionCount)
@@ -105,6 +104,8 @@ func (qb *QBot) EventListener() {
 }
 
 // CommandParser parses the Slack messages for QBot commands
+// TODO: Implement a select switch instead and channel commands -> replies
+// TODO: Break out logic into seperate functions
 func (qb *QBot) CommandParser() {
 	for msgs := range qb.msgCh {
 		message := msgs.Message                        // Message recieved
@@ -139,17 +140,26 @@ func (qb *QBot) CommandParser() {
 			if err := qb.DB.UpdateUserTableWithQuestion(user, q); err != nil {
 				reply = "Someone has already asked that question. Run *!lq* to see the last questions asked"
 			} else {
-				reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", user.Name, q.ID)
+				reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", q.UserName, q.ID)
 			}
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
 
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
-			//qb.ListQuestions(qb.Slack, sChannel)
-			qb.lqHandler()
-		case string(msgSplit[0:4]) == "!qna" || string(msgSplit[0:4]) == "!QnA":
-			qb.qnaHandler(sChannel)
+			go qb.lqHandler(sChannel)
+		case string(msgSplit[0:5]) == "!qna " || string(msgSplit[0:5]) == "!QnA ":
+			// TODO: Capture error wher users doesn't include an ID
+			var reply string
+			parts := strings.Fields(string(msgSplit[5:])) // Splits incoming message into slice
+			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!qna " is an intiger (Question ID)
+			if err != nil {
+				log.Warn().Msgf("Question ID was not provided with the question answered")
+				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
+			}
+			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
+			go qb.qnaHandler(sChannel, questionID)
 
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
+			// TODO: Capture error wher users doesn't include an ID
 			var reply string
 			parts := strings.Fields(string(msgSplit[3:])) // Splits incoming message into slice
 			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!a " is an intiger (Question ID)
@@ -186,7 +196,7 @@ func (qb *QBot) CommandParser() {
 					log.Error().Err(err)
 					reply = "I had problems storing your provided answer in the DB. Did you specify the Question ID correctly?"
 				} else {
-					reply = fmt.Sprintf("Thank you %s for providing an answer to question %v. Your answer has been assigned ID: %v", user.Name, q.ID, a.ID)
+					reply = fmt.Sprintf("Thank you %s for providing an answer to question %v!", a.UserName, q.ID)
 				}
 
 			} else {
@@ -199,31 +209,9 @@ func (qb *QBot) CommandParser() {
 	}
 }
 
-func (qb *QBot) lqHandler() {
-	// TODO: List unanswered questions
-}
-
-// TODO: Fix Formating of reply and exclude unanswered questions
-func (qb *QBot) qnaHandler(sChannel string) {
-	msg := new(Reply)
-	query, err := qb.DB.QueryAnsweredQuestions()
-	if err != nil {
-		log.Error().Err(err)
-	}
-	var qnaStore []QuestionsAndAnswers
-	PopulateBuffer(query, &qnaStore)
-	if len(qnaStore) > 0 {
-		for n := range qnaStore {
-			reply := fmt.Sprintf("ID: %v, %v asked: %v\nAnswers: %v\n\n", qnaStore[n].QuestionID, qnaStore[n].AskedBy, qnaStore[n].Question, qnaStore[n].Answers)
-			msg.Body, msg.AsUser = reply, true
-			PostFormattedReply(qb.Slack, sChannel, msg)
-		}
-	}
-}
-
-// PopulateBuffer takes query data (db object) and a &struct (buffer) and populates
+// ParseQueryAndCacheContent takes query data (db object) and a &struct (buffer) and populates
 // it using json tags.
-func PopulateBuffer(data, buffer interface{}) error {
+func ParseQueryAndCacheContent(data, buffer interface{}) error {
 	jsonEncQNA, _ := json.Marshal(data)
 	return json.Unmarshal(jsonEncQNA, &buffer)
 }

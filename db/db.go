@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	queryLimit = 20 // Limit the amount of records retrieved across all DB query functions
+	queryLimit = 10 // Limit the amount of records retrieved across all DB query functions
 )
 
 // Database : docker exec -it mysql1 mysql -uroot -p
@@ -75,8 +75,16 @@ func (db *Database) UserExistInDB(newUserRecord models.User) bool {
 // and return a populated struct of type LastTenQuestions. This function is called
 // in reply.go
 func (db *Database) QueryQuestions() ([]models.Question, error) {
-	var ltq []models.Question
-	return ltq, errors.Wrap(db.Model(&models.Question{}).Order("created_at DESC").Last(&[]models.Question{}).Limit(queryLimit).Error, "Unable to query Questions table for last questions")
+	var lq []models.Question
+	return lq, errors.Wrap(db.Model(&models.Question{}).Order("id DESC").Find(&lq).Limit(queryLimit).Error, "Unable to query Questions table for last questions")
+}
+
+// QueryAnsweredQuestionsByID queries the Questions table by ID and its m2m Answer relationship
+// for questions and answers. It returns a db object containing the information. This is parsed
+// and buffered using the PopulateBuffer func.
+func (db *Database) QueryAnsweredQuestionsByID(questionID int) ([]models.Question, error) {
+	var qna []models.Question
+	return qna, errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").First(&qna, questionID).Limit(queryLimit).Error, "Unable to query database")
 }
 
 // QueryAnsweredQuestions queries the most recent Questions table and its m2m Answer relationship
@@ -84,13 +92,13 @@ func (db *Database) QueryQuestions() ([]models.Question, error) {
 // and buffered using the PopulateBuffer func.
 func (db *Database) QueryAnsweredQuestions() ([]models.Question, error) {
 	var qna []models.Question
-	return qna, errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Find(&qna).Limit(queryLimit).Error, "Problemas!")
+	return qna, errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Find(&qna).Limit(queryLimit).Error, "Unable to query database")
 }
 
 /* UPDATE FUNCTIONS */
 
-// UpdateUsers func cross references the Users posting against the Users added
-// to the DB. If a new User is detected, UpdateUsers will update the Users
+// UpdateUsers func cross references the user object against the Users in
+// the DB. If a new User is detected, UpdateUsers will update the Users
 // table with a new record of the poster
 func (db *Database) UpdateUsers(user *models.User) uint {
 	db.CreateNewDBRecord(user)
