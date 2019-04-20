@@ -2,3 +2,9 @@ apiToken: "xxxooasfppp" #Enter Bot Oauth token
 metadata:
   joinChannels: ""
   generalChannels: ""
+database:
+  type: ""
+  database: ""
+  user: ""
+  password: ""
+debug: "INFO"

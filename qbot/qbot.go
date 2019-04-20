@@ -28,10 +28,12 @@ func (qb *QBot) RunBot() {
 type QBot struct {
 	// Global QBot configuration
 	Config struct {
-		APIToken       string   `yaml:"apiToken"`
-		JoinChannels   []string `yaml:"joinChannels"`
-		GeneralChannel string   `yaml:"generalChannel"`
-		Debug          bool
+		APIToken string `yaml:"apiToken"`
+		Metadata struct {
+			JoinChannels   string `yaml:"joinChannels"`
+			GeneralChannel string `yaml:"generalChannel"`
+		}
+		DebugLevel string `yaml:"debug"`
 	}
 
 	// Websocket connection
@@ -102,8 +104,6 @@ func (qb *QBot) EventListener() {
 }
 
 // CommandParser parses the Slack messages for QBot commands
-// TODO: Implement a select switch instead and channel commands -> replies
-// TODO: Break out logic into seperate functions
 func (qb *QBot) CommandParser() {
 	for msgs := range qb.msgCh {
 		message := msgs.Message                        // Message recieved
@@ -118,21 +118,8 @@ func (qb *QBot) CommandParser() {
 
 		switch { // Checks incoming message for requested bot command
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
-			outQuestion := string(msgSplit[3:])
-			go qb.qHandler(sChannel, outQuestion, userInfo)
-		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
-			go qb.lqHandler(sChannel)
-		case string(msgSplit[0:5]) == "!qna " || string(msgSplit[0:5]) == "!QnA ":
-			// TODO: Capture error wher users doesn't include an ID
-			var reply string
-			parts := strings.Fields(string(msgSplit[5:])) // Splits incoming message into slice
-			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!qna " is an intiger (Question ID)
-			if err != nil {
-				log.Warn().Msgf("Question ID was not provided with the question answered")
-				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
-			}
-			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
-			go qb.qnaHandler(sChannel, questionID)
+			question := string(msgSplit[3:])
+			go qb.qHandler(sChannel, question, userInfo)
 
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
 			// TODO: Capture error wher users doesn't include an ID
@@ -143,16 +130,32 @@ func (qb *QBot) CommandParser() {
 				log.Printf("Question ID was not provided with the question answered")
 				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
 			}
-			outAnswer := strings.Join(parts[1:], " ")
-			if len(outAnswer) != 0 {
-
-				go qb.aHandler(sChannel, outAnswer, questionID, userInfo)
-
+			answer := strings.Join(parts[1:], " ")
+			if len(answer) != 0 {
+				go qb.aHandler(sChannel, answer, questionID, userInfo)
 			} else {
 				reply = "No answer was provided, please try again"
 				log.Warn().Msg("Slack user failed to provide and answer")
 			}
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
+
+		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
+			go qb.lqHandler(sChannel)
+
+		case string(msgSplit[0:4]) == "!la " || string(msgSplit[0:4]) == "!LA ":
+			// TODO: Capture error wher users doesn't include an ID
+			var reply string
+			parts := strings.Fields(string(msgSplit[4:])) // Splits incoming message into slice
+			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!la " is an intiger (Question ID)
+			if err != nil {
+				log.Warn().Msgf("Question ID was not provided with the question answered")
+				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
+			}
+			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
+			go qb.qnaHandler(sChannel, questionID)
+
+		case string(msgSplit[0:2]) == "!h" || string(msgSplit[0:5]) == "!help":
+			qb.helpHandler(sChannel)
 		}
 		qb.rtm.SendMessage(outMsg)
 	}

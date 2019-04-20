@@ -1,9 +1,12 @@
 package db
 
 import (
+	"fmt"
+	"io/ioutil"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v2"
 
 	models "github.com/grvlle/qbot/model"
 	"github.com/pkg/errors"
@@ -13,17 +16,34 @@ import (
 )
 
 const (
-	queryLimit = 10 // Limit the amount of records retrieved across all DB query functions
+	queryLimit = 5 // Limit the amount of records retrieved across all DB query functions
 )
 
-// Database : docker exec -it mysql1 mysql -uroot -p
 type Database struct {
 	*gorm.DB
 }
 
+type DatabaseConfig struct {
+	Database struct {
+		DatabaseType     string `yaml:"type"`
+		Database         string `yaml:"database"`
+		DatabaseUser     string `yaml:"user"`
+		DatabasePassword string `yaml:"password"`
+	}
+}
+
 // InitializeDB sets up the mySQL connection
 func InitializeDB() *Database {
-	db, err := gorm.Open("mysql", "root:qbot@/qbot?charset=utf8&parseTime=True&loc=Local")
+	config := new(DatabaseConfig)
+	configFile, err := ioutil.ReadFile("config.yaml")
+	err = yaml.Unmarshal(configFile, &config)
+	if err != nil {
+		panic(err)
+	}
+	credentials := fmt.Sprintf("%s:%s@/%s?charset=utf8&parseTime=True&loc=Local", config.Database.DatabaseUser, config.Database.DatabasePassword, config.Database.Database)
+	dialect := config.Database.DatabaseType
+
+	db, err := gorm.Open(dialect, credentials)
 	if err != nil {
 		log.Fatal().Msgf("Failed to connect to Database. Reason: %v\n", err)
 	}
@@ -76,7 +96,7 @@ func (db *Database) UserExistInDB(newUserRecord models.User) bool {
 // in reply.go
 func (db *Database) QueryQuestions() ([]models.Question, error) {
 	var lq []models.Question
-	return lq, errors.Wrap(db.Model(&models.Question{}).Order("id DESC").Find(&lq).Limit(queryLimit).Error, "Unable to query Questions table for last questions")
+	return lq, errors.Wrap(db.Limit(queryLimit).Model(&models.Question{}).Order("id DESC").Find(&lq).Error, "Unable to query Questions table for last questions")
 }
 
 // QueryAnsweredQuestionsByID queries the Questions table by ID and its m2m Answer relationship
@@ -84,7 +104,7 @@ func (db *Database) QueryQuestions() ([]models.Question, error) {
 // and buffered using the PopulateBuffer func.
 func (db *Database) QueryAnsweredQuestionsByID(questionID int) ([]models.Question, error) {
 	var qna []models.Question
-	return qna, errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").First(&qna, questionID).Limit(queryLimit).Error, "Unable to query database")
+	return qna, errors.Wrap(db.Limit(queryLimit).Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Order("id DESC").First(&qna, questionID).Error, "Unable to query database")
 }
 
 // QueryAnsweredQuestions queries the most recent Questions table and its m2m Answer relationship
@@ -92,7 +112,7 @@ func (db *Database) QueryAnsweredQuestionsByID(questionID int) ([]models.Questio
 // and buffered using the PopulateBuffer func.
 func (db *Database) QueryAnsweredQuestions() ([]models.Question, error) {
 	var qna []models.Question
-	return qna, errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Find(&qna).Limit(queryLimit).Error, "Unable to query database")
+	return qna, errors.Wrap(db.Limit(queryLimit).Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Order("id DESC").Find(&qna).Error, "Unable to query database")
 }
 
 /* UPDATE FUNCTIONS */

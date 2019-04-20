@@ -43,9 +43,11 @@ func PostFormattedReply(client *slack.Client, sChannel string, r *Reply) (string
 	if err != nil {
 		log.Error().Msgf("Unable to Post Message to channel: %v", err.Error())
 	}
-	return ts, nil
+	return ts, err
 }
 
+// qHandler triggers when a slack user uses !q to provide a question.
+// It will update the database with the question and add non-existing users as well.
 func (qb *QBot) qHandler(sChannel, outQuestion string, userInfo *slack.User) {
 	var reply string
 
@@ -73,6 +75,8 @@ func (qb *QBot) qHandler(sChannel, outQuestion string, userInfo *slack.User) {
 	qb.rtm.SendMessage(outMsg)
 }
 
+// aHandler triggers when a slack user uses !a to provide an answer.
+// It will update the database with the answer and add non-existing users as well.
 func (qb *QBot) aHandler(sChannel, outAnswer string, questionID int, userInfo *slack.User) {
 	var reply string
 
@@ -115,22 +119,25 @@ func (qb *QBot) aHandler(sChannel, outAnswer string, questionID int, userInfo *s
 func (qb *QBot) lqHandler(sChannel string) {
 	r := new(Reply)
 	var qStore []QuestionsAndAnswers
-	query, err := qb.DB.QueryQuestions()
+	query, err := qb.DB.QueryAnsweredQuestions()
 	if err != nil {
 		log.Error().Err(err)
 	}
-
 	ParseQueryAndCacheContent(query, &qStore)
+	PostFormattedReply(qb.Slack, sChannel, &Reply{Body: "Below is a list of the five most recent questions asked. The green color marks answered questions. Use `!la <Question ID>` to list the answers.", AsUser: true})
 	if len(qStore) > 0 {
 		for i := range qStore {
 			title := fmt.Sprintf("Question ID %v:", qStore[i].QuestionID)
 			footer := fmt.Sprintf("Asked by %s", qStore[i].AskedBy)
 			att := []slack.Attachment{slack.Attachment{Color: "#1D9BD1", Title: title, Footer: footer, Text: qStore[i].Question}}
+			if len(qStore[i].Answers) >= 1 { // If question is answered, the output will be colored green
+				att = []slack.Attachment{slack.Attachment{Color: "#36a64f", Title: title, Footer: footer, Text: qStore[i].Question}}
+			}
 			r.Attachments, r.AsUser = append(att), true
 			PostFormattedReply(qb.Slack, sChannel, r)
 		}
 	}
-	qStore = nil // GC
+	r, qStore = nil, nil // GC
 }
 
 // qnaHandler triggers when slack user types !qna <Question ID>.
@@ -158,12 +165,30 @@ func (qb *QBot) qnaHandler(sChannel string, questionID int) {
 					PostFormattedReply(qb.Slack, sChannel, r2)
 
 				}
+			} else {
+				PostFormattedReply(qb.Slack, sChannel, &Reply{Body: "This question has not been answered yet. To provide an answer use `!a <Question ID> <Answer>`", AsUser: true})
 			}
-
 		}
-
 	}
-	qnaStore = nil // GC
+	r, r2, qnaStore = nil, nil, nil // GC
+}
+
+func (qb *QBot) helpHandler(sChannel string) {
+	r := new(Reply)
+	title := ":information_source: HOW TO USE QBOT?"
+	text := fmt.Sprintf("Thanks for using the Netrounds qBot! Below is a list of all available bot commands.\n\n" +
+		"· `!h` or `!help` will display the Help Information you're looking at right now.\n" +
+		"· `!q <question>` or `!Q <question>` is used when asking a question.\n" +
+		"· `!lq` or `!LQ` will list the last 5 questions asked. Each question will have a color marking indicating wheter or not they have been answered. Blue (:blue_heart:) is an unanswered question, and green (:green_heart:) indicates that atleast one answer has been provided. \n" +
+		"· `!a <question ID>` or `!A <question ID>` is used when providing and answer to a question.\n" +
+		"· `!la <question ID>` or `!LA <question ID>` will list the answers provided to a specific question.\n\n\n" +
+		"More commands and further functionality will be introduced over time. For feature requests and bug reports, please DM <@martin.g>.\n")
+	footer := "qBot v.1.0 BETA"
+	fields := []slack.AttachmentField{slack.AttachmentField{Title: "Website", Value: "Coming soon...", Short: true}, slack.AttachmentField{Title: "Contribute", Short: true, Value: "This is a hobby project written in Go by <@martin.g>. Feel free to <http://https://github.com/grvlle/qbot/tree/develop|contribute>! :golang:"}}
+	att := []slack.Attachment{slack.Attachment{Color: "#1D9BD1", Title: title, Text: text, Fields: fields, Footer: footer}}
+	r.Attachments, r.AsUser = append(att), true
+	PostFormattedReply(qb.Slack, sChannel, r)
+	r = nil
 }
 
 // ParseQueryAndCacheContent takes query data (db object) and a &struct (buffer) and populates
