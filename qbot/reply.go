@@ -140,9 +140,9 @@ func (qb *QBot) lqHandler(sChannel string) {
 	r, qStore = nil, nil // GC
 }
 
-// qnaHandler triggers when slack user types !qna <Question ID>.
+// laHandler triggers when slack user types !la <Question ID>.
 // Replies to the user with all answers related to the question ID
-func (qb *QBot) qnaHandler(sChannel string, questionID int) {
+func (qb *QBot) laHandler(sChannel string, questionID int) {
 	r := new(Reply)
 	r2 := new(Reply)
 	var qnaStore []QuestionsAndAnswers
@@ -155,15 +155,15 @@ func (qb *QBot) qnaHandler(sChannel string, questionID int) {
 	if len(qnaStore) > 0 {
 		for i := range qnaStore {
 			if len(qnaStore[i].Answers) >= 1 {
-				reply := fmt.Sprintf("*Question ID %v* asked by _%v_:\n>%v\n*Answers provided*: \n\n", qnaStore[i].QuestionID, qnaStore[i].AskedBy, qnaStore[i].Question)
-				r.Body, r.AsUser = reply, true
+				reply := fmt.Sprintf("*Question ID %v* asked by _%v_:\n\n", qnaStore[i].QuestionID, qnaStore[i].AskedBy)
+				att := []slack.Attachment{slack.Attachment{Color: "#1D9BD1", Pretext: reply, Text: qnaStore[i].Question}, slack.Attachment{Pretext: "\n*Answers Provided:*"}}
+				r.Attachments, r.AsUser = att, true
 				PostFormattedReply(qb.Slack, sChannel, r)
 
 				for _, a := range qnaStore[i].Answers {
-					att := []slack.Attachment{slack.Attachment{Color: "#36a64f", Footer: a.AnsweredBy, Text: a.Answer}}
+					att := []slack.Attachment{slack.Attachment{Color: "#36a64f", Footer: "Answered by " + a.AnsweredBy, Text: a.Answer}}
 					r2.Attachments, r2.AsUser = append(att), true
 					PostFormattedReply(qb.Slack, sChannel, r2)
-
 				}
 			} else {
 				PostFormattedReply(qb.Slack, sChannel, &Reply{Body: "This question has not been answered yet. To provide an answer use `!a <Question ID> <Answer>`", AsUser: true})

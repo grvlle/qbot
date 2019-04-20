@@ -117,10 +117,11 @@ func (qb *QBot) CommandParser() {
 		outMsg := qb.rtm.NewOutgoingMessage("", sChannel)
 
 		switch { // Checks incoming message for requested bot command
+		// Ask Questions
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
 			question := string(msgSplit[3:])
 			go qb.qHandler(sChannel, question, userInfo)
-
+		// Answer Questions
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
 			// TODO: Capture error wher users doesn't include an ID
 			var reply string
@@ -138,10 +139,10 @@ func (qb *QBot) CommandParser() {
 				log.Warn().Msg("Slack user failed to provide and answer")
 			}
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
-
+		// List Questions
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
 			go qb.lqHandler(sChannel)
-
+		// List Answers
 		case string(msgSplit[0:4]) == "!la " || string(msgSplit[0:4]) == "!LA ":
 			// TODO: Capture error wher users doesn't include an ID
 			var reply string
@@ -152,8 +153,8 @@ func (qb *QBot) CommandParser() {
 				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
 			}
 			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
-			go qb.qnaHandler(sChannel, questionID)
-
+			go qb.laHandler(sChannel, questionID)
+		// Help Information
 		case string(msgSplit[0:2]) == "!h" || string(msgSplit[0:5]) == "!help":
 			qb.helpHandler(sChannel)
 		}
