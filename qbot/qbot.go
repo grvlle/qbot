@@ -1,7 +1,6 @@
 package qbot
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 
@@ -9,7 +8,6 @@ import (
 	"strings"
 
 	db "github.com/grvlle/qbot/db"
-	models "github.com/grvlle/qbot/model"
 	"github.com/nlopes/slack"
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v2"
@@ -120,30 +118,8 @@ func (qb *QBot) CommandParser() {
 
 		switch { // Checks incoming message for requested bot command
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
-			var reply string
 			outQuestion := string(msgSplit[3:])
-			q := new(models.Question)
-			q.Question, q.SlackChannel, q.UserName = outQuestion, sChannel, userInfo.Profile.RealName
-
-			user := &models.User{
-				Questions: []*models.Question{q},
-				Name:      userInfo.Profile.RealNameNormalized,
-				Title:     userInfo.Profile.Title,
-				Avatar:    userInfo.Profile.Image32,
-				SlackUser: userInfo.ID,
-			}
-			if !qb.DB.UserExistInDB(*user) {
-				qb.DB.UpdateUsers(user)
-			}
-
-			// Update the user_questions (m2m) and questions table with question_id and question
-			if err := qb.DB.UpdateUserTableWithQuestion(user, q); err != nil {
-				reply = "Someone has already asked that question. Run *!lq* to see the last questions asked"
-			} else {
-				reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", q.UserName, q.ID)
-			}
-			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
-
+			go qb.qHandler(sChannel, outQuestion, userInfo)
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
 			go qb.lqHandler(sChannel)
 		case string(msgSplit[0:5]) == "!qna " || string(msgSplit[0:5]) == "!QnA ":
@@ -170,34 +146,7 @@ func (qb *QBot) CommandParser() {
 			outAnswer := strings.Join(parts[1:], " ")
 			if len(outAnswer) != 0 {
 
-				a := new(models.Answer)
-				a.Answer, a.QuestionID, a.SlackChannel, a.UserName = outAnswer, questionID, sChannel, userInfo.Profile.RealName
-				user := &models.User{
-					Answers:   []*models.Answer{a},
-					Name:      userInfo.Profile.RealNameNormalized,
-					Title:     userInfo.Profile.Title,
-					Avatar:    userInfo.Profile.Image32,
-					SlackUser: userInfo.ID,
-				}
-
-				if !qb.DB.UserExistInDB(*user) {
-					qb.DB.UpdateUsers(user)
-				}
-
-				// Update the user_answers (m2m) and answers table with the answer_id and answer
-				if err := qb.DB.UpdateUserTableWithAnswer(user, a); err != nil {
-					log.Error().Err(err)
-					reply = "I had problems storing your provided answer in the DB"
-				}
-
-				// Update the questions_answer (m2m) table record with the answer_id
-				q := models.Question{Answers: []*models.Answer{a}}
-				if err := qb.DB.UpdateQuestionTableWithAnswer(&q, a); err != nil {
-					log.Error().Err(err)
-					reply = "I had problems storing your provided answer in the DB. Did you specify the Question ID correctly?"
-				} else {
-					reply = fmt.Sprintf("Thank you %s for providing an answer to question %v!", a.UserName, q.ID)
-				}
+				go qb.aHandler(sChannel, outAnswer, questionID, userInfo)
 
 			} else {
 				reply = "No answer was provided, please try again"
@@ -207,11 +156,4 @@ func (qb *QBot) CommandParser() {
 		}
 		qb.rtm.SendMessage(outMsg)
 	}
-}
-
-// ParseQueryAndCacheContent takes query data (db object) and a &struct (buffer) and populates
-// it using json tags.
-func ParseQueryAndCacheContent(data, buffer interface{}) error {
-	jsonEncQNA, _ := json.Marshal(data)
-	return json.Unmarshal(jsonEncQNA, &buffer)
 }

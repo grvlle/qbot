@@ -33,8 +33,8 @@ func InitializeDB() *Database {
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
 
-	db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
-	db.DropTable("user_questions", "question_answers", "user_answers")      // Temp
+	//db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
+	//db.DropTable("user_questions", "question_answers", "user_answers")      // Temp
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
 		log.Fatal().Msgf("Unable to migrate database. \nReason: %v", err)
 	}
