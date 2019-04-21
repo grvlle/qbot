@@ -26,7 +26,7 @@ database:
 
 ### Supported commands
 
-![qbot commands](https://imgur.com/17MfKAM)
+![qbot commands](https://i.imgur.com/17MfKAM.png)
 
 ## Built With
 
