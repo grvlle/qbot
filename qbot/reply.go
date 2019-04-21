@@ -3,6 +3,7 @@ package qbot
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	models "github.com/grvlle/qbot/model"
 	"github.com/nlopes/slack"
@@ -12,21 +13,24 @@ import (
 // Reply is used to construct formatted replies
 type Reply struct {
 	Body        string
-	Blocks      []slack.Block
-	Attachments []slack.Attachment
+	Blocks      []slack.Block      // https://api.slack.com/tools/block-kit-builder
+	Attachments []slack.Attachment // https://api.slack.com/docs/message-formatting
 	AsUser      bool
 }
 
 // QuestionsAndAnswers are used to parse DB objects into a
-// datatype that is easier to work with.
+// datatype that is easier to work with. The ParseQueryAndCacheContent
+// function is used to populate the below struct.
 type QuestionsAndAnswers struct {
-	QuestionID int    `json:"ID"`
-	Question   string `json:"Question"`
-	AskedBy    string `json:"UserName"`
+	QuestionID int    `json:"id,omitempty"`
+	Question   string `json:"question,omitempty"`
+	AskedBy    string `json:"username,omitempty"`
+	CreatedAt  string `json:"createdat,omitempty"`
 	Answers    []struct {
-		Answer     string `json:"Answer"`
-		AnsweredBy string `json:"UserName"`
-	} `json:"Answers"`
+		Answer     string `json:"answer,omitempty"`
+		AnsweredBy string `json:"username,omitempty"`
+		CreatedAt  string `json:"createdat,omitempty"`
+	} `json:"answers,omitempty"`
 }
 
 // PostFormattedReply takes a pointer to the Slack Client and a
@@ -50,10 +54,8 @@ func PostFormattedReply(client *slack.Client, sChannel string, r *Reply) (string
 // It will update the database with the question and add non-existing users as well.
 func (qb *QBot) qHandler(sChannel, outQuestion string, userInfo *slack.User) {
 	var reply string
-
 	q := new(models.Question)
 	q.Question, q.SlackChannel, q.UserName = outQuestion, sChannel, userInfo.Profile.RealName
-
 	user := &models.User{
 		Questions: []*models.Question{q},
 		Name:      userInfo.Profile.RealNameNormalized,
@@ -64,7 +66,6 @@ func (qb *QBot) qHandler(sChannel, outQuestion string, userInfo *slack.User) {
 	if !qb.DB.UserExistInDB(*user) {
 		qb.DB.UpdateUsers(user)
 	}
-
 	// Update the user_questions (m2m) and questions table with question_id and question
 	if err := qb.DB.UpdateUserTableWithQuestion(user, q); err != nil {
 		reply = "Someone has already asked that question. Run *!lq* to see the last questions asked"
@@ -79,10 +80,8 @@ func (qb *QBot) qHandler(sChannel, outQuestion string, userInfo *slack.User) {
 // It will update the database with the answer and add non-existing users as well.
 func (qb *QBot) aHandler(sChannel, outAnswer string, questionID int, userInfo *slack.User) {
 	var reply string
-
 	a := new(models.Answer)
 	a.Answer, a.QuestionID, a.SlackChannel, a.UserName = outAnswer, questionID, sChannel, userInfo.Profile.RealName
-
 	user := &models.User{
 		Answers:   []*models.Answer{a},
 		Name:      userInfo.Profile.RealNameNormalized,
@@ -90,17 +89,14 @@ func (qb *QBot) aHandler(sChannel, outAnswer string, questionID int, userInfo *s
 		Avatar:    userInfo.Profile.Image32,
 		SlackUser: userInfo.ID,
 	}
-
 	if !qb.DB.UserExistInDB(*user) {
 		qb.DB.UpdateUsers(user)
 	}
-
 	// Update the user_answers (m2m) and answers table with the answer_id and answer
 	if err := qb.DB.UpdateUserTableWithAnswer(user, a); err != nil {
 		log.Error().Err(err)
 		reply = "I had problems storing your provided answer in the DB"
 	}
-
 	// Update the questions_answer (m2m) table record with the answer_id
 	q := models.Question{Answers: []*models.Answer{a}}
 	if err := qb.DB.UpdateQuestionTableWithAnswer(&q, a); err != nil {
@@ -127,8 +123,9 @@ func (qb *QBot) lqHandler(sChannel string) {
 	PostFormattedReply(qb.Slack, sChannel, &Reply{Body: "Below is a list of the five most recent questions asked. The green color marks answered questions. Use `!la <Question ID>` to list the answers.", AsUser: true})
 	if len(qStore) > 0 {
 		for i := range qStore {
+			ts, _ := time.Parse(time.RFC3339, qStore[i].CreatedAt)
 			title := fmt.Sprintf("Question ID %v:", qStore[i].QuestionID)
-			footer := fmt.Sprintf("Asked by %s", qStore[i].AskedBy)
+			footer := fmt.Sprintf("Asked by %s | %s", qStore[i].AskedBy, ts.String())
 			att := []slack.Attachment{slack.Attachment{Color: "#1D9BD1", Title: title, Footer: footer, Text: qStore[i].Question}}
 			if len(qStore[i].Answers) >= 1 { // If question is answered, the output will be colored green
 				att = []slack.Attachment{slack.Attachment{Color: "#36a64f", Title: title, Footer: footer, Text: qStore[i].Question}}
@@ -161,7 +158,9 @@ func (qb *QBot) laHandler(sChannel string, questionID int) {
 				PostFormattedReply(qb.Slack, sChannel, r)
 
 				for _, a := range qnaStore[i].Answers {
-					att := []slack.Attachment{slack.Attachment{Color: "#36a64f", Footer: "Answered by " + a.AnsweredBy, Text: a.Answer}}
+					ts, _ := time.Parse(time.RFC3339, a.CreatedAt)
+					footer := fmt.Sprintf("Answered by %s | %s", a.AnsweredBy, ts)
+					att := []slack.Attachment{slack.Attachment{Color: "#36a64f", Footer: footer, Text: a.Answer}}
 					r2.Attachments, r2.AsUser = append(att), true
 					PostFormattedReply(qb.Slack, sChannel, r2)
 				}
@@ -195,5 +194,6 @@ func (qb *QBot) helpHandler(sChannel string) {
 // it using json tags.
 func ParseQueryAndCacheContent(data, buffer interface{}) error {
 	jsonEncQNA, _ := json.Marshal(data)
+	//fmt.Println(string(jsonEncQNA))
 	return json.Unmarshal(jsonEncQNA, &buffer)
 }
