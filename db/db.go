@@ -23,7 +23,7 @@ type Database struct {
 	*gorm.DB
 }
 
-type DatabaseConfig struct {
+type dbConfig struct {
 	Database struct {
 		DatabaseType     string `yaml:"type"`
 		Database         string `yaml:"database"`
@@ -32,9 +32,9 @@ type DatabaseConfig struct {
 	}
 }
 
-// InitializeDB sets up the mySQL connection
+// InitializeDB sets up the mySQL connection and migrates the database
 func InitializeDB() *Database {
-	config := new(DatabaseConfig)
+	config := new(dbConfig)
 	configFile, err := ioutil.ReadFile("config.yaml")
 	err = yaml.Unmarshal(configFile, &config)
 	if err != nil {
@@ -101,7 +101,7 @@ func (db *Database) QueryQuestions() ([]models.Question, error) {
 
 // QueryAnsweredQuestionsByID queries the Questions table by ID and its m2m Answer relationship
 // for questions and answers. It returns a db object containing the information. This is parsed
-// and buffered using the PopulateBuffer func.
+// and buffered using the ParseQueryAndCacheContent func.
 func (db *Database) QueryAnsweredQuestionsByID(questionID int) ([]models.Question, error) {
 	var qna []models.Question
 	return qna, errors.Wrap(db.Limit(queryLimit).Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Order("id DESC").First(&qna, questionID).Error, "Unable to query database")
@@ -109,10 +109,16 @@ func (db *Database) QueryAnsweredQuestionsByID(questionID int) ([]models.Questio
 
 // QueryAnsweredQuestions queries the most recent Questions table and its m2m Answer relationship
 // for questions and answers. It returns a db object containing the information. This is parsed
-// and buffered using the PopulateBuffer func.
+// and buffered using the ParseQueryAndCacheContent func.
 func (db *Database) QueryAnsweredQuestions() ([]models.Question, error) {
 	var qna []models.Question
 	return qna, errors.Wrap(db.Limit(queryLimit).Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Order("id DESC").Find(&qna).Error, "Unable to query database")
+}
+
+// QueryQuestionsAskedByUserID : TODO
+func (db *Database) QueryQuestionsAskedByUserID(slackID string) ([]models.User, error) {
+	var user []models.User
+	return user, errors.Wrap(db.Model(&models.User{}).Related(&[]models.Question{}, "Questions").Preload("Questions").Where("slack_user = ?", slackID).Find(&user).Error, "Unable to query user by ID")
 }
 
 /* UPDATE FUNCTIONS */
@@ -141,4 +147,14 @@ func (db *Database) UpdateUserTableWithAnswer(user *models.User, a *models.Answe
 // UpdateQuestionTableWithAnswer updates the Question tables m2m relationship with answers provided
 func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.Answer) error {
 	return errors.Wrap(db.Model(&q).First(&q, a.QuestionID).Association("Answers").Append(a).Error, "Unable to update the Question table with answer provided")
+}
+
+/* DELETE FUNCTIONS */
+
+// DeleteAnsweredQuestionsByID queries the Questions table by ID and its m2m Answer relationship
+// for questions and answers. It returns a db object containing the information. This is parsed
+// and buffered using the ParseQueryAndCacheContent func.
+func (db *Database) DeleteAnsweredQuestionsByID(questionID int) error {
+	var q []models.Question
+	return errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Where("id = ?", questionID).Delete(&q).Error, "Unable to delete user from Database")
 }

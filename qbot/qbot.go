@@ -21,6 +21,7 @@ func (qb *QBot) RunBot() {
 	qb.rtm = rtm
 	qb.SetupHandlers()
 	qb.rtm.ManageConnection()
+	defer qb.DB.Close()
 }
 
 // QBot contains Slack API configuration data
@@ -114,21 +115,23 @@ func (qb *QBot) CommandParser() {
 		}
 
 		msgSplit := []rune(message)
-		outMsg := qb.rtm.NewOutgoingMessage("", sChannel)
 
 		switch { // Checks incoming message for requested bot command
+
 		// Ask Questions
 		case string(msgSplit[0:3]) == "!q " || string(msgSplit[0:3]) == "!Q ":
 			question := string(msgSplit[3:])
 			go qb.qHandler(sChannel, question, userInfo)
+
 		// Answer Questions
 		case string(msgSplit[0:3]) == "!a " || string(msgSplit[0:3]) == "!A ":
 			// TODO: Capture error wher users doesn't include an ID
 			var reply string
-			parts := strings.Fields(string(msgSplit[3:])) // Splits incoming message into slice
-			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!a " is an intiger (Question ID)
+			msg := string(msgSplit[3:])
+			parts := strings.Fields(msg)     // Splits incoming message into slice
+			questionID, err := idParser(msg) // Verifies that the first element after "!a " is an intiger (Question ID)
 			if err != nil {
-				log.Printf("Question ID was not provided with the question answered")
+				log.Warn().Msg("Question ID was not provided with the question answered")
 				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
 			}
 			answer := strings.Join(parts[1:], " ")
@@ -138,26 +141,46 @@ func (qb *QBot) CommandParser() {
 				reply = "No answer was provided, please try again"
 				log.Warn().Msg("Slack user failed to provide and answer")
 			}
-			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
+			qb.rtm.SendMessage(qb.rtm.NewOutgoingMessage(reply, sChannel))
+
 		// List Questions
 		case string(msgSplit[0:3]) == "!lq" || string(msgSplit[0:3]) == "!LQ":
 			go qb.lqHandler(sChannel)
+
 		// List Answers
 		case string(msgSplit[0:4]) == "!la " || string(msgSplit[0:4]) == "!LA ":
 			// TODO: Capture error wher users doesn't include an ID
 			var reply string
-			parts := strings.Fields(string(msgSplit[4:])) // Splits incoming message into slice
-			questionID, err := strconv.Atoi(parts[0])     // Verifies that the first element after "!la " is an intiger (Question ID)
+			msg := string(msgSplit[4:])
+			questionID, err := idParser(msg)
 			if err != nil {
-				log.Warn().Msgf("Question ID was not provided with the question answered")
-				reply = fmt.Sprintf("Please include an ID for the question you're answering\n E.g '!a 123 The answer is no!'")
+				log.Warn().Msg("Question ID was not provided when listing answers")
+				reply = fmt.Sprintf("Please include an ID for the question you're trying to list the answers for\n E.g '!la 123'")
 			}
-			outMsg = qb.rtm.NewOutgoingMessage(reply, sChannel)
+			qb.rtm.SendMessage(qb.rtm.NewOutgoingMessage(reply, sChannel))
 			go qb.laHandler(sChannel, questionID)
+
+		// Delete Question
+		case string(msgSplit[0:10]) == "!delete_q ":
+			var reply string
+			msg := string(msgSplit[10:])
+			questionID, _ := idParser(msg)
+			if err != nil {
+				log.Warn().Msg("Question ID was not provided when trying to delete question")
+				reply = fmt.Sprintf("Please include an ID for the question you're trying to delete\n E.g '!delete_q 123'")
+			}
+			qb.rtm.SendMessage(qb.rtm.NewOutgoingMessage(reply, sChannel))
+			go qb.deleteqHandler(sChannel, userInfo.ID, questionID)
+
 		// Help Information
 		case string(msgSplit[0:2]) == "!h" || string(msgSplit[0:5]) == "!help":
 			qb.helpHandler(sChannel)
 		}
-		qb.rtm.SendMessage(outMsg)
 	}
+}
+
+// Verifies that the first element is an intiger and returns it
+func idParser(message string) (int, error) {
+	questionID, err := strconv.Atoi(strings.Fields(message)[0])
+	return questionID, err
 }

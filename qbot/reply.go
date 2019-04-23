@@ -18,6 +18,21 @@ type Reply struct {
 	AsUser      bool
 }
 
+// UserInformation are used to parse DB objects into a
+// datatype that is easier to work with. The ParseQueryAndCacheContent
+// function is used to populate the below struct.
+type UserInformation struct {
+	UserID    int `json:"id,omitempty"`
+	Questions []struct {
+		QuestionID int    `json:"id,omitempty"`
+		Question   string `json:"question,omitempty"`
+	} `json:"questions,omitempty"`
+	Answers []struct {
+		AnswerID int    `json:"id,omitempty"`
+		Answer   string `json:"answer,omitempty"`
+	} `json:"answers,omitempty"`
+}
+
 // QuestionsAndAnswers are used to parse DB objects into a
 // datatype that is easier to work with. The ParseQueryAndCacheContent
 // function is used to populate the below struct.
@@ -134,7 +149,6 @@ func (qb *QBot) lqHandler(sChannel string) {
 			PostFormattedReply(qb.Slack, sChannel, r)
 		}
 	}
-	r, qStore = nil, nil // GC
 }
 
 // laHandler triggers when slack user types !la <Question ID>.
@@ -169,31 +183,55 @@ func (qb *QBot) laHandler(sChannel string, questionID int) {
 			}
 		}
 	}
-	r, r2, qnaStore = nil, nil, nil // GC
 }
 
-func (qb *QBot) helpHandler(sChannel string) {
+// deleteqHandler will soft delete user posted questions and return a reply.
+func (qb *QBot) deleteqHandler(sChannel, sUserID string, questionID int) (string, error) {
+	var reply string
+	var userStore []UserInformation
+	query, err := qb.DB.QueryQuestionsAskedByUserID(sUserID)
+	if err != nil {
+		log.Error().Err(err)
+	}
+	ParseQueryAndCacheContent(query, &userStore)
+	for i := range userStore {
+		for _, q := range userStore[i].Questions {
+			switch {
+			case questionID == q.QuestionID: // Checks if user owns the question
+				if err := qb.DB.DeleteAnsweredQuestionsByID(questionID); err != nil {
+					log.Error().Err(err)
+				}
+				reply = "Question has successfully been deleted."
+				return PostFormattedReply(qb.Slack, sChannel, &Reply{Body: reply, AsUser: true})
+			}
+		}
+	}
+	reply = "Either the question doesn't exist, or you're trying to delete someone elses question. The latter is not allowed. :eyes:"
+	return PostFormattedReply(qb.Slack, sChannel, &Reply{Body: reply, AsUser: true})
+
+}
+
+func (qb *QBot) helpHandler(sChannel string) (string, error) {
 	r := new(Reply)
 	title := ":information_source: HOW TO USE QBOT?"
 	text := fmt.Sprintf("Thanks for using the Netrounds qBot! Below is a list of all available bot commands.\n\n" +
-		"· `!h` or `!help` will display the Help Information you're looking at right now.\n" +
-		"· `!q <question>` or `!Q <question>` is used when asking a question.\n" +
-		"· `!lq` or `!LQ` will list the last 5 questions asked. Each question will have a color marking indicating wheter or not they have been answered. Blue (:blue_heart:) is an unanswered question, and green (:green_heart:) indicates that atleast one answer has been provided. \n" +
-		"· `!a <question ID>` or `!A <question ID>` is used when providing and answer to a question.\n" +
-		"· `!la <question ID>` or `!LA <question ID>` will list the answers provided to a specific question.\n\n\n" +
+		"· *Help:* `!help` will display the Help Information you're looking at right now.\n" +
+		"· *Ask Question:* `!q <question>` is used when asking a question.\n" +
+		"· *List Questions:* `!lq` will list the last 5 questions asked. Each question will have a color marking indicating wheter or not they have been answered. Blue (:blue_heart:) is an unanswered question, and green (:green_heart:) indicates that atleast one answer has been provided. \n" +
+		"· *Answer Questions:* `!a <question ID> <answer>` is used when providing and answer to a question.\n" +
+		"· *List Answers:* `!la <question ID>` will list the answers provided to a specific question.\n" +
+		"· *Delete Question:* `!delete_q <question ID>` - will delete questions asked along with associated answers.\n\n\n" +
 		"More commands and further functionality will be introduced over time. For feature requests and bug reports, please DM <@martin.g>.\n")
 	footer := "qBot v.1.0 BETA"
-	fields := []slack.AttachmentField{slack.AttachmentField{Title: "Website", Value: "Coming soon...", Short: true}, slack.AttachmentField{Title: "Contribute", Short: true, Value: "This is a hobby project written in Go by <@martin.g>. Feel free to <http://https://github.com/grvlle/qbot/tree/develop|contribute>! :golang:"}}
+	fields := []slack.AttachmentField{slack.AttachmentField{Title: "Website", Value: "Coming soon...", Short: true}, slack.AttachmentField{Title: "Contribute", Short: true, Value: "This is a hobby project written in Go by <@martin.g>. Feel free to <https://github.com/grvlle/qbot/tree/develop|contribute>! :golang:"}}
 	att := []slack.Attachment{slack.Attachment{Color: "#1D9BD1", Title: title, Text: text, Fields: fields, Footer: footer}}
 	r.Attachments, r.AsUser = append(att), true
-	PostFormattedReply(qb.Slack, sChannel, r)
-	r = nil
+	return PostFormattedReply(qb.Slack, sChannel, r)
 }
 
 // ParseQueryAndCacheContent takes query data (db object) and a &struct (buffer) and populates
 // it using json tags.
 func ParseQueryAndCacheContent(data, buffer interface{}) error {
-	jsonEncQNA, _ := json.Marshal(data)
-	//fmt.Println(string(jsonEncQNA))
-	return json.Unmarshal(jsonEncQNA, &buffer)
+	jsonEncoded, _ := json.Marshal(data)
+	return json.Unmarshal(jsonEncoded, &buffer)
 }
