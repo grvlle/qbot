@@ -83,7 +83,8 @@ func (qb *QBot) qHandler(sChannel, outQuestion string, userInfo *slack.User) {
 	}
 	// Update the user_questions (m2m) and questions table with question_id and question
 	if err := qb.DB.UpdateUserTableWithQuestion(user, q); err != nil {
-		reply = "Someone has already asked that question. Run *!lq* to see the last questions asked"
+		log.Error().Err(err)
+		reply = "Either the question exceeds 300 words, or someone has already asked that question. Run *!lq* to see the last questions asked"
 	} else {
 		reply = fmt.Sprintf("Thank you %s for providing a question. Your question has been assigned ID: %v", q.UserName, q.ID)
 	}

@@ -53,8 +53,8 @@ func InitializeDB() *Database {
 	db.DB().SetMaxIdleConns(50)
 	db.DB().SetMaxOpenConns(200)
 
-	//db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
-	//db.DropTable("user_questions", "question_answers", "user_answers")      // Temp
+	// db.DropTableIfExists(models.User{}, models.Question{}, models.Answer{}) // Temp
+	// db.DropTable("user_questions", "question_answers", "user_answers")      // Temp
 	if err := db.AutoMigrate(models.User{}, models.Question{}, models.Answer{}).Error; err != nil {
 		log.Fatal().Msgf("Unable to migrate database. \nReason: %v", err)
 	}
@@ -75,6 +75,21 @@ func (db *Database) CreateNewDBRecord(record interface{}) error {
 	}
 	log.Info().Msg("A new Database Record were successfully added.")
 	return nil
+}
+
+// UpdateUserTableWithQuestion updates the User m2m relationship with questions asked
+func (db *Database) UpdateUserTableWithQuestion(user *models.User, q *models.Question) error {
+	return errors.Wrap(db.Model(&user).Find(user).Association("Questions").Append(q).Error, "Unable to update the User table with question asked")
+}
+
+// UpdateUserTableWithAnswer updates the User m2m relationship with answers provided
+func (db *Database) UpdateUserTableWithAnswer(user *models.User, a *models.Answer) error {
+	return errors.Wrap(db.Model(&user).Find(user).Association("Answers").Append(a).Error, "Unable to update the User table with answer provided")
+}
+
+// UpdateQuestionTableWithAnswer updates the Question tables m2m relationship with answers provided
+func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.Answer) error {
+	return errors.Wrap(db.Model(&q).First(&q, a.QuestionID).Association("Answers").Append(a).Error, "Unable to update the Question table with answer provided")
 }
 
 /* READ FUNCTIONS */
@@ -132,21 +147,6 @@ func (db *Database) UpdateUsers(user *models.User) uint {
 		log.Warn().Msgf("Failed to add record %v to table %v.\nReason: %v", user, &user, err)
 	}
 	return user.ID
-}
-
-// UpdateUserTableWithQuestion updates the User m2m relationship with questions asked
-func (db *Database) UpdateUserTableWithQuestion(user *models.User, q *models.Question) error {
-	return errors.Wrap(db.Model(&user).Find(user).Association("Questions").Append(q).Error, "Unable to update the User table with question asked")
-}
-
-// UpdateUserTableWithAnswer updates the User m2m relationship with answers provided
-func (db *Database) UpdateUserTableWithAnswer(user *models.User, a *models.Answer) error {
-	return errors.Wrap(db.Model(&user).Find(user).Association("Answers").Append(a).Error, "Unable to update the User table with answer provided")
-}
-
-// UpdateQuestionTableWithAnswer updates the Question tables m2m relationship with answers provided
-func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.Answer) error {
-	return errors.Wrap(db.Model(&q).First(&q, a.QuestionID).Association("Answers").Append(a).Error, "Unable to update the Question table with answer provided")
 }
 
 /* DELETE FUNCTIONS */
