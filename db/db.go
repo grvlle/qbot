@@ -5,11 +5,10 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v2"
-
 	models "github.com/grvlle/qbot/model"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v2"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/mysql" // MySQL
@@ -65,6 +64,7 @@ func InitializeDB() *Database {
 /* CREATE FUNCTIONS */
 
 // CreateNewDBRecord checks if record exists. If not, proceeds to create a new one
+// TODO: Rewrite using FirstorCreate method insted
 func (db *Database) CreateNewDBRecord(record interface{}) error {
 	if !db.NewRecord(record) {
 		log.Warn().Msg("The value's primary key is not blank")
@@ -95,6 +95,7 @@ func (db *Database) UpdateQuestionTableWithAnswer(q *models.Question, a *models.
 /* READ FUNCTIONS */
 
 // UserExistInDB func queries the DB for existing users prior to adding new ones.
+// TODO: Rewrite this function to use Firstorcreate method instead.
 func (db *Database) UserExistInDB(newUserRecord models.User) bool {
 	var count int64
 	// Count DB entries matching the Slack User ID
@@ -107,8 +108,7 @@ func (db *Database) UserExistInDB(newUserRecord models.User) bool {
 }
 
 // QueryQuestions func will query the database for the last ten questions stored
-// and return a populated struct of type LastTenQuestions. This function is called
-// in reply.go
+// and return a DB object of Questions
 func (db *Database) QueryQuestions() ([]models.Question, error) {
 	var lq []models.Question
 	return lq, errors.Wrap(db.Limit(queryLimit).Model(&models.Question{}).Order("id DESC").Find(&lq).Error, "Unable to query Questions table for last questions")
@@ -154,7 +154,8 @@ func (db *Database) UpdateUsers(user *models.User) uint {
 // DeleteAnsweredQuestionsByID queries the Questions table by ID and its m2m Answer relationship
 // for questions and answers. It returns a db object containing the information. This is parsed
 // and buffered using the ParseQueryAndCacheContent func.
+// TODO: Make sure m2m table record also gets deleted
 func (db *Database) DeleteAnsweredQuestionsByID(questionID int) error {
 	var q []models.Question
-	return errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Where("id = ?", questionID).Delete(&q).Error, "Unable to delete user from Database")
+	return errors.Wrap(db.Model(&models.Question{}).Related(&[]models.Answer{}, "Answers").Preload("Answers").Where("id = ?", questionID).Unscoped().Delete(&q).Error, "Unable to delete user from Database")
 }

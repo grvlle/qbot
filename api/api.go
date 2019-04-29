@@ -1,7 +1,17 @@
 package api
 
-func GetResources(w http.ResponseWriter, r *http.Request) {
-	var resources []Resource
-	db.Find(&resources)
-	json.NewEncoder(w).Encode(&resources)
+import (
+	"encoding/json"
+	db "github.com/grvlle/qbot/db"
+	models "github.com/grvlle/qbot/model"
+	"net/http"
+)
+
+var DB *db.Database
+
+func GetUsers(w http.ResponseWriter, r *http.Request) {
+	var users []models.User
+	tx := DB.Begin()
+	tx.Find(&users)
+	json.NewEncoder(w).Encode(&users)
 }

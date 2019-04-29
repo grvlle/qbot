@@ -195,6 +195,7 @@ func (qb *QBot) deleteqHandler(sChannel, sUserID string, questionID int) (string
 		log.Error().Err(err)
 	}
 	ParseQueryAndCacheContent(query, &userStore)
+
 	for i := range userStore {
 		for _, q := range userStore[i].Questions {
 			switch {

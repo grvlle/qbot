@@ -21,7 +21,7 @@ func (qb *QBot) RunBot() {
 	qb.rtm = rtm
 	qb.SetupHandlers()
 	qb.rtm.ManageConnection()
-	defer qb.DB.Close()
+
 }
 
 // QBot contains Slack API configuration data
@@ -58,7 +58,8 @@ func (qb *QBot) LoadConfig() *QBot {
 		panic(err)
 	}
 	qb.msgCh = make(chan Message, 500)
-	qb.DB = db.InitializeDB()
+
+	// qb.DB = db.InitializeDB()
 
 	return qb
 }
