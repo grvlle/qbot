@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	db "github.com/grvlle/qbot/db"
 	//models "github.com/grvlle/qbot/model"
+	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog/log"
 	"net/http"
@@ -12,11 +13,16 @@ import (
 
 var DB *db.Database
 
+func Index(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello World!")
+}
+
 func GetQuestions(w http.ResponseWriter, r *http.Request) {
 	questions, err := DB.QueryQuestions()
 	if err != nil {
 		log.Error().Err(err)
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(&questions)
 }
 
@@ -26,6 +32,7 @@ func GetQuestion(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error().Err(err)
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(&users)
 }
 
@@ -34,6 +41,7 @@ func GetUsers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error().Err(err)
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(&users)
 }
 
@@ -43,6 +51,7 @@ func GetUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error().Err(err)
 	}
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(&users)
 }
 
