@@ -136,6 +136,18 @@ func (db *Database) QueryQuestionsAskedByUserID(slackID string) ([]models.User, 
 	return user, errors.Wrap(db.Model(&models.User{}).Related(&[]models.Question{}, "Questions").Preload("Questions").Where("slack_user = ?", slackID).Find(&user).Error, "Unable to query user by ID")
 }
 
+// QueryUsersByID : TODO
+func (db *Database) QueryUsersByID(userID int) ([]models.User, error) {
+	var user []models.User
+	return user, errors.Wrap(db.Model(&models.User{}).Related(&[]models.Question{}, "Questions").Related(&[]models.Answer{}, "Answers").Preload("Answers").Preload("Questions").Find(&user).Error, "Unable to query user")
+}
+
+// QueryUsers : TODO
+func (db *Database) QueryUsers() ([]models.User, error) {
+	var user []models.User
+	return user, errors.Wrap(db.Model(&models.User{}).Related(&[]models.Question{}, "Questions").Related(&[]models.Answer{}, "Answers").Find(&user).Error, "Unable to query users")
+}
+
 /* UPDATE FUNCTIONS */
 
 // UpdateUsers func cross references the user object against the Users in

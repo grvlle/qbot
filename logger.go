@@ -8,6 +8,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// InitializeLogger initializes zero logger with pretty STDERR output
+// TODO: Include better db.logger output
 func InitializeLogger() {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
 	logger := log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})

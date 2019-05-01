@@ -40,11 +40,11 @@ type QuestionsAndAnswers struct {
 	QuestionID int    `json:"id,omitempty"`
 	Question   string `json:"question,omitempty"`
 	AskedBy    string `json:"username,omitempty"`
-	CreatedAt  string `json:"createdat,omitempty"`
+	CreatedAt  string `json:"createdate,omitempty"`
 	Answers    []struct {
 		Answer     string `json:"answer,omitempty"`
 		AnsweredBy string `json:"username,omitempty"`
-		CreatedAt  string `json:"createdat,omitempty"`
+		CreatedAt  string `json:"createdate,omitempty"`
 	} `json:"answers,omitempty"`
 }
 
@@ -195,7 +195,6 @@ func (qb *QBot) deleteqHandler(sChannel, sUserID string, questionID int) (string
 		log.Error().Err(err)
 	}
 	ParseQueryAndCacheContent(query, &userStore)
-
 	for i := range userStore {
 		for _, q := range userStore[i].Questions {
 			switch {

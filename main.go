@@ -6,29 +6,36 @@ import (
 	qb "github.com/grvlle/qbot/qbot"
 	"github.com/rs/zerolog/log"
 	"net/http"
-
-	"github.com/gorilla/mux"
+	"time"
 )
 
-var bot qb.QBot
+var qbot qb.QBot
 
 func init() {
 	InitializeLogger()
 }
 
 func main() {
+	// Initialize database connection and share across modules
 	db := database.InitializeDB()
 	api.DB = db
-	bot.DB = db
+	qbot.DB = db
 	defer db.Close()
 
-	go bot.RunBot()
+	// Run Slack Bot
+	go qbot.RunBot()
 
-	router := mux.NewRouter()
-	router.HandleFunc("/users", api.GetUsers).Methods("GET")
-	// router.HandleFunc("/resources/{id}", GetResource).Methods("GET")
-	// router.HandleFunc("/resources", CreateResource).Methods("POST")
-	// router.HandleFunc("/resources/{id}", DeleteResource).Methods("DELETE")
-	log.Fatal().Err(http.ListenAndServe(":8000", router))
+	// Setup API Routes
+	router := api.SetupRoutes()
+
+	// Initialize API Webserver
+	srv := &http.Server{
+		Handler: router,
+		Addr:    "127.0.0.1:8000",
+		// Enforces timeouts for webserver
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+	}
+	log.Fatal().Err(srv.ListenAndServe())
 
 }

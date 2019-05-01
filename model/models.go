@@ -9,8 +9,8 @@ import (
 /*User table in the Database */
 type User struct {
 	gorm.Model
-	Questions []*Question `gorm:"many2many:user_questions;"`
-	Answers   []*Answer   `gorm:"many2many:user_answers;"`
+	Questions []*Question `gorm:"many2many:user_questions;" json:",omitempty"`
+	Answers   []*Answer   `gorm:"many2many:user_answers;" json:",omitempty"`
 	Name      string
 	Title     string
 	Avatar    string
@@ -21,7 +21,7 @@ type User struct {
 type Question struct {
 	gorm.Model
 	Question     string    `gorm:"type:varchar(300);unique"`
-	Answers      []*Answer `gorm:"many2many:question_answers;auto_preload"`
+	Answers      []*Answer `gorm:"many2many:question_answers;auto_preload" json:",omitempty"`
 	SlackChannel string
 	UserName     string
 }
