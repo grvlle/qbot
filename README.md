@@ -39,7 +39,7 @@ database:
 
 * **Martin Granström** - *Initial work* - [grvlle](https://github.com/grvlle)
 
-See also the list of [contributors](https://github.com/your/project/contributors) who participated in this project.
+See also the list of [contributors](https://github.com/grvlle/qbot/contributors) who participated in this project.
 
 ## License
 
